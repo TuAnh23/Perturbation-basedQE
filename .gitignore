@@ -1,0 +1,13 @@
+*.DS_Store
+.eggs/*
+libpecos.egg-info/*
+.idea/*
+*.pyc
+*.pickle
+*/.ipynb_checkpoints/*
+
+
+data/*
+output/*
+.ipynb_checkpoints/*
+
