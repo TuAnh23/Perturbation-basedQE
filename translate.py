@@ -6,6 +6,7 @@ from nltk.corpus import stopwords
 import gensim.downloader as api
 import random
 import logging
+from transformers import T5ForConditionalGeneration, T5Tokenizer
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -51,6 +52,8 @@ def main():
     if args.dataname == "MuST-SHE-en2fr":
         LOGGER.info("Loading pretrained translation model")
         src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt14.en-fr')
+        src2tgt_model.eval()  # disable dropout
+        src2tgt_model.cuda()  # move model to GPU
 
         # Load test translation data
         src_tgt_df = pd.read_csv(f"{args.data_root_dir}/MuST-SHE_v1.2/MuST-SHE-v1.2-data/tsv/MONOLINGUAL.fr_v1.2.tsv",
@@ -61,6 +64,8 @@ def main():
         LOGGER.info("Loading pretrained translation model")
         src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
                                        checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
+        src2tgt_model.eval()  # disable dropout
+        src2tgt_model.cuda()  # move model to GPU
 
         # Load test translation data
         with open(f"{args.data_root_dir}/common-test/ep-test.en", encoding="ISO-8859-1") as f:
@@ -71,13 +76,31 @@ def main():
             de_sentences = [line.rstrip() for line in de_sentences]
         src_tgt_df = pd.DataFrame(data={'SRC': en_sentences, 'REF': de_sentences})
 
+    elif args.dataname == "IWSLT'15-en2vi":
+        with open(f"{args.data_root_dir}/IWSLT'15-en2vi/tst2013.en") as f:
+            en_sentences = f.readlines()
+            en_sentences = [line.rstrip() for line in en_sentences]
+        with open(f"{args.data_root_dir}/IWSLT'15-en2vi/tst2013.vi") as f:
+            vi_sentences = f.readlines()
+            vi_sentences = [line.rstrip() for line in vi_sentences]
+        src_tgt_df = pd.DataFrame(data={'SRC': en_sentences, 'REF': vi_sentences})
+
+        # Use en-vi model at https://huggingface.co/NlpHUST/t5-en-vi-small
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print('There are %d GPU(s) available.' % torch.cuda.device_count())
+            print('We will use the GPU:', torch.cuda.get_device_name(0))
+        else:
+            print('No GPU available, using  CPU instead.')
+            device = torch.device("cpu")
+
+        src2tgt_model = T5ForConditionalGeneration.from_pretrained("NlpHUST/t5-en-vi-small")
+        tokenizer = T5Tokenizer.from_pretrained("NlpHUST/t5-en-vi-small")
+        src2tgt_model.to(device)
+        src2tgt_model.eval()
+
     else:
         raise RuntimeError(f"Dataset {args.dataname} not available.")
-
-    src2tgt_model.eval()  # disable dropout
-
-    # Move model to GPU for faster translation
-    src2tgt_model.cuda()
 
     if args.dev:
         src_tgt_perturbed = src_tgt_df[:10]  # Select a small number of rows to dev
@@ -87,13 +110,17 @@ def main():
     if args.perturbation_type is None:
         # Translate the original source sentences
         LOGGER.info("Translating original SRC sentences.")
-        if args.batch_size > 1:
-            src_tgt_perturbed["OriginalSRC-Trans"] = batch_translation(model=src2tgt_model,
-                                                                       src_sentences=src_tgt_perturbed['SRC'].tolist(),
-                                                                       beam=args.beam, batch_size=args.batch_size)
-        else:
+        if args.dataname == "IWSLT'15-en2vi":
             src_tgt_perturbed["OriginalSRC-Trans"] = src_tgt_perturbed['SRC'].apply(
-                lambda x: src2tgt_model.translate(x, beam=args.beam))
+                lambda x: translate(src2tgt_model, tokenizer, x, args.beam, device))
+        else:
+            if args.batch_size > 1:
+                src_tgt_perturbed["OriginalSRC-Trans"] = batch_translation(model=src2tgt_model,
+                                                                           src_sentences=src_tgt_perturbed['SRC'].tolist(),
+                                                                           beam=args.beam, batch_size=args.batch_size)
+            else:
+                src_tgt_perturbed["OriginalSRC-Trans"] = src_tgt_perturbed['SRC'].apply(
+                    lambda x: src2tgt_model.translate(x, beam=args.beam))
     else:
         # Generate the perturbed sentences
         LOGGER.info("Perturbing sentences")
@@ -110,21 +137,42 @@ def main():
 
         # Translate the perturbed sentences
         LOGGER.info("Translating perturbed SRC sentences.")
-        if args.batch_size > 1:
-            src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed-Trans"] = \
-                batch_translation(model=src2tgt_model,
-                                  src_sentences=src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed"].tolist(),
-                                  beam=args.beam, batch_size=args.batch_size)
-        else:
+        if args.dataname == "IWSLT'15-en2vi":
             src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed-Trans"] = \
                 src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed"].apply(
-                    lambda x: src2tgt_model.translate(x, beam=args.beam))
+                    lambda x: translate(src2tgt_model, tokenizer, x, args.beam, device))
+        else:
+            if args.batch_size > 1:
+                src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed-Trans"] = \
+                    batch_translation(model=src2tgt_model,
+                                      src_sentences=src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed"].tolist(),
+                                      beam=args.beam, batch_size=args.batch_size)
+            else:
+                src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed-Trans"] = \
+                    src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed"].apply(
+                        lambda x: src2tgt_model.translate(x, beam=args.beam))
 
     LOGGER.info("Saving output")
     src_tgt_perturbed.to_csv(f"{args.output_dir}/translations.csv")
 
 
+def translate(model, tokenizer, src: str, beam: int, device) -> str:
+    # Only compatible for huggingface transformer models
+    tokenized_text = tokenizer.encode(src, return_tensors="pt").to(device)
+    summary_ids = model.generate(
+        tokenized_text,
+        max_length=128,
+        num_beams=beam,
+        repetition_penalty=2.5,
+        length_penalty=1.0,
+        early_stopping=True
+    )
+    output = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    return output
+
+
 def batch_translation(model, src_sentences: list, batch_size: int, beam: int) -> list:
+    # Only compatible for fairseq models
     translations = []
     for i in range(0, len(src_sentences), batch_size):
         if i + batch_size > len(src_sentences):
