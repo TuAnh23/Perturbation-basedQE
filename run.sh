@@ -10,16 +10,18 @@ export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
 nvidia-smi
 
-dataname="Europarl-en2de"
+dataname="IWSLT15-en2vi"
 data_root_dir="data"
-batch_size=5
+batch_size=10
 seed=0
+replacement_strategy="masking_language_model"
 
-declare -a StringArray=("None" "noun" "verb" "adjective" "adverb" "pronoun" )
-for perturbation_type in ${StringArray[@]}; do
-  for beam in {1..5}; do
+declare -a perturbation_types=("noun" "verb" "adjective" "adverb" "pronoun" )
+
+for beam in {5..1}; do
+  for perturbation_type in ${perturbation_types[@]}; do
     timestamp=$(date +"%d-%m-%y-%T")
-    output_dir=output/${dataname}/beam${beam}_perturb${perturbation_type}/seed${seed}
+    output_dir=output/${dataname}/${replacement_strategy}/beam${beam}_perturb${perturbation_type}/seed${seed}
     mkdir -p ${output_dir}
     python -u translate.py \
       --data_root_dir ${data_root_dir} \
@@ -29,6 +31,7 @@ for perturbation_type in ${StringArray[@]}; do
       --beam ${beam} \
       --seed ${seed} \
       --batch_size ${batch_size} \
+      --replacement_strategy ${replacement_strategy} \
       |& tee -a ${output_dir}/output_job_${timestamp}.txt
   done
 done
