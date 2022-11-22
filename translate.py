@@ -9,6 +9,8 @@ import logging
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 from transformers import pipeline
 from html import unescape
+import numpy as np
+from nltk.stem.snowball import SnowballStemmer
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -20,6 +22,17 @@ LOGGER = logging.getLogger(__name__)
 
 
 # nltk.download()
+
+def set_seed(seed=0):
+    """Set the random seed for torch.
+    Args:
+        seed (int, optional): random seed. Default 0
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    # If CUDA is not available, this is silently ignored.
+    torch.cuda.manual_seed_all(seed)
 
 
 def main():
@@ -38,7 +51,9 @@ def main():
 
     parser = argparse.ArgumentParser(description='Translate with perturbation to source sentences.')
     parser.add_argument('--data_root_dir', type=str, default="data")
-    parser.add_argument('--dataname', type=str, default="MuST-SHE-en2fr")
+    parser.add_argument('--dataname', type=str, default="MuST-SHE-en2fr",
+                        help="[MuST-SHE-en2fr|Europarl-en2de|IWSLT15-en2vi|wmt19-newstest2019-en2de|"
+                             "masked_covost2_for_en2de]")
     parser.add_argument('--perturbation_type', type=none_or_str, default=None)
     parser.add_argument('--beam', type=int, default=5)
     parser.add_argument('--seed', type=int, default=0)
@@ -46,13 +61,16 @@ def main():
     parser.add_argument('--output_dir', type=str)
     parser.add_argument('--dev', type=str_to_bool, default=False,
                         help="Run on a tiny amount of data for developing")
+    parser.add_argument('--ignore_case', type=str_to_bool, default=False)
     parser.add_argument('--gpu', type=int, default=-1)
     parser.add_argument('--replacement_strategy', type=str, default='word2vec_similarity',
                         help='[word2vec_similarity|masking_language_model]. The later option is context-based.')
+    parser.add_argument('--number_of_replacement', type=int, default=1,
+                        help='The number of replacement for 1 SRC word')
     args = parser.parse_args()
     print(args)
 
-    random.seed(args.seed)
+    set_seed(args.seed)
 
     if args.dataname == "MuST-SHE-en2fr":
         LOGGER.info("Loading pretrained translation model")
@@ -85,11 +103,11 @@ def main():
         with open(f"{args.data_root_dir}/IWSLT15-en2vi/tst2013.en") as f:
             en_sentences = f.readlines()
             en_sentences = [line.rstrip() for line in en_sentences]
-            en_sentences = [unescape(line).lower() for line in en_sentences]
+            en_sentences = [unescape(line) for line in en_sentences]
         with open(f"{args.data_root_dir}/IWSLT15-en2vi/tst2013.vi") as f:
             vi_sentences = f.readlines()
             vi_sentences = [line.rstrip() for line in vi_sentences]
-            vi_sentences = [unescape(line).lower() for line in vi_sentences]
+            vi_sentences = [unescape(line) for line in vi_sentences]
         src_tgt_df = pd.DataFrame(data={'SRC': en_sentences, 'REF': vi_sentences})
 
         # Use en-vi model at https://huggingface.co/NlpHUST/t5-en-vi-small
@@ -106,8 +124,98 @@ def main():
         src2tgt_model.to(device)
         src2tgt_model.eval()
 
+    elif args.dataname in ["manual_en2vi_bias", "IWSLT15_en2vi_bias", "IWSLT15_en2vi_bias_train"]:
+        src_tgt_df = pd.read_csv(f"{args.data_root_dir}/en2vi_bias/{args.dataname}.csv", index_col=0)
+
+        # Use en-vi model at https://huggingface.co/NlpHUST/t5-en-vi-small
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print('There are %d GPU(s) available.' % torch.cuda.device_count())
+            print('We will use the GPU:', torch.cuda.get_device_name(0))
+        else:
+            print('No GPU available, using  CPU instead.')
+            device = torch.device("cpu")
+
+        src2tgt_model = T5ForConditionalGeneration.from_pretrained("NlpHUST/t5-en-vi-small")
+        tokenizer = T5Tokenizer.from_pretrained("NlpHUST/t5-en-vi-small")
+        src2tgt_model.to(device)
+        src2tgt_model.eval()
+
+    elif args.dataname in ['covost2_countries_replacement_he', 'covost2_countries_replacement_she']:
+        src_tgt_df = pd.read_csv(f"{args.data_root_dir}/covost2/{args.dataname}.csv", index_col=0)
+
+        # Use en-vi model at https://huggingface.co/NlpHUST/t5-en-vi-small
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print('There are %d GPU(s) available.' % torch.cuda.device_count())
+            print('We will use the GPU:', torch.cuda.get_device_name(0))
+        else:
+            print('No GPU available, using  CPU instead.')
+            device = torch.device("cpu")
+
+        src2tgt_model = T5ForConditionalGeneration.from_pretrained("NlpHUST/t5-en-vi-small")
+        tokenizer = T5Tokenizer.from_pretrained("NlpHUST/t5-en-vi-small")
+        src2tgt_model.to(device)
+        src2tgt_model.eval()
+
+    elif args.dataname == 'covost2_countries_replacement_you':
+        # Test data at https://www.statmt.org/wmt19/metrics-task.html
+        LOGGER.info("Loading pretrained translation model")
+        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
+                                       checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
+        src2tgt_model.eval()  # disable dropout
+        src2tgt_model.cuda()  # move model to GPU
+
+        # Load translation data
+        src_tgt_df = pd.read_csv(f"{args.data_root_dir}/covost2/{args.dataname}.csv", index_col=0)
+
+    elif args.dataname == 'winoMT_src':
+        # Test data at https://www.statmt.org/wmt19/metrics-task.html
+        LOGGER.info("Loading pretrained translation model")
+        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
+                                       checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
+        src2tgt_model.eval()  # disable dropout
+        src2tgt_model.cuda()  # move model to GPU
+
+        # Load translation data
+        src_tgt_df = pd.read_csv(f"{args.data_root_dir}/winoMT_src.csv", index_col=0)
+
+    elif args.dataname in ["masked_regional_covost2_for_en2de", 'masked_occupation_covost2_for_en2de',
+                           'masked_content_covost2_for_en2de']:
+        LOGGER.info("Loading pretrained translation model")
+        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
+                                       checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
+        src2tgt_model.eval()  # disable dropout
+        src2tgt_model.cuda()  # move model to GPU
+
+        # Load translation data
+        src_tgt_df = pd.read_csv(f"{args.data_root_dir}/{args.dataname}.csv", index_col=0)
+
+    elif args.dataname == 'wmt19-newstest2019-en2de':
+        # Test data at https://www.statmt.org/wmt19/metrics-task.html
+        LOGGER.info("Loading pretrained translation model")
+        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
+                                       checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
+        src2tgt_model.eval()  # disable dropout
+        src2tgt_model.cuda()  # move model to GPU
+
+        # Load test translation data
+        with open(f"{args.data_root_dir}/wmt19-submitted-data-v3/txt/sources/newstest2019-ende-src.en") as f:
+            en_sentences = f.readlines()
+            en_sentences = [line.rstrip() for line in en_sentences]
+        with open(f"{args.data_root_dir}/wmt19-submitted-data-v3/txt/references/newstest2019-ende-ref.de") as f:
+            de_sentences = f.readlines()
+            de_sentences = [line.rstrip() for line in de_sentences]
+        src_tgt_df = pd.DataFrame(data={'SRC': en_sentences, 'REF': de_sentences})
+
     else:
         raise RuntimeError(f"Dataset {args.dataname} not available.")
+
+    if "SRC_index" not in src_tgt_df.columns:
+        src_tgt_df.insert(0, column="SRC_index", value=src_tgt_df.index.values)
+
+    if args.ignore_case:
+        src_tgt_df = src_tgt_df.applymap(lambda x: x.lower())
 
     if args.dev:
         src_tgt_perturbed = src_tgt_df[:10]  # Select a small number of rows to dev
@@ -117,18 +225,61 @@ def main():
     if args.perturbation_type is None:
         # Translate the original source sentences
         LOGGER.info("Translating original SRC sentences.")
-        if args.dataname == "IWSLT15-en2vi":
+        if args.dataname in ["IWSLT15-en2vi", "manual_en2vi_bias", "IWSLT15_en2vi_bias", "IWSLT15_en2vi_bias_train",
+                             'covost2_countries_replacement_he', 'covost2_countries_replacement_she']:
             src_tgt_perturbed["OriginalSRC-Trans"] = src_tgt_perturbed['SRC'].apply(
                 lambda x: translate(src2tgt_model, tokenizer, x, args.beam, device))
         else:
             if args.batch_size > 1:
-                src_tgt_perturbed["OriginalSRC-Trans"] = batch_translation(model=src2tgt_model,
-                                                                           src_sentences=src_tgt_perturbed[
-                                                                               'SRC'].tolist(),
-                                                                           beam=args.beam, batch_size=args.batch_size)
+                src_tgt_perturbed["OriginalSRC-Trans"] = batch_translation(
+                    model=src2tgt_model,
+                    src_sentences=src_tgt_perturbed['SRC'].tolist(),
+                    beam=args.beam, batch_size=args.batch_size
+                )
             else:
                 src_tgt_perturbed["OriginalSRC-Trans"] = src_tgt_perturbed['SRC'].apply(
                     lambda x: src2tgt_model.translate(x, beam=args.beam))
+        LOGGER.info("Saving output")
+        src_tgt_perturbed.to_csv(f"{args.output_dir}/translations.csv")
+
+    elif args.dataname.startswith('masked'):
+        # Generate the unmasked replacement sentences
+        LOGGER.info("Unmasking sentences")
+        if args.replacement_strategy == 'masking_language_model':
+            if torch.cuda.is_available():
+                gpu = 0
+            else:
+                print('No GPU available, using  CPU instead.')
+                gpu = -1
+
+            if args.ignore_case:
+                word_replacement_model = pipeline('fill-mask', model='bert-base-uncased', device=gpu)
+            else:
+                word_replacement_model = pipeline('fill-mask', model='bert-base-cased', device=gpu)
+        else:
+            raise RuntimeError(f"Replacement strategy {args.replacement_strategy} not available.")
+
+        src_tgt_perturbed = replace_mask(masked_src_df=src_tgt_perturbed,
+                                         replacement_strategy=args.replacement_strategy,
+                                         number_of_replacement=args.number_of_replacement,
+                                         replacement_model=word_replacement_model)
+
+        # Translate the perturbed sentences
+        LOGGER.info("Translating perturbed SRC sentences.")
+        if args.batch_size > 1:
+            src_tgt_perturbed[f"SRC_perturbed-Trans"] = \
+                batch_translation(model=src2tgt_model,
+                                  src_sentences=src_tgt_perturbed[
+                                      f"SRC_perturbed"].tolist(),
+                                  beam=args.beam, batch_size=args.batch_size)
+        else:
+            src_tgt_perturbed[f"SRC_perturbed-Trans"] = \
+                src_tgt_perturbed[f"SRC_perturbed"].apply(
+                    lambda x: src2tgt_model.translate(x, beam=args.beam))
+
+        LOGGER.info("Saving output")
+        src_tgt_perturbed.to_csv(f"{args.output_dir}/translations_{args.number_of_replacement}replacements.csv")
+
     else:
         # Generate the perturbed sentences
         LOGGER.info("Perturbing sentences")
@@ -141,26 +292,23 @@ def main():
             else:
                 print('No GPU available, using  CPU instead.')
                 gpu = -1
-            word_replacement_model = pipeline('fill-mask', model='bert-base-uncased', device=gpu)
+
+            if args.ignore_case:
+                word_replacement_model = pipeline('fill-mask', model='bert-base-uncased', device=gpu)
+            else:
+                word_replacement_model = pipeline('fill-mask', model='bert-base-cased', device=gpu)
         else:
             raise RuntimeError(f"Replacement strategy {args.replacement_strategy} not available.")
 
-        perturbed_df = src_tgt_perturbed[['SRC']]. \
-            apply(
-            lambda x: perturb_sentence(
-                perturb_type=args.perturbation_type, sentence=x.values[0], model=word_replacement_model,
-                replacement_strategy=args.replacement_strategy),
-            axis='columns', result_type='expand'
-        ). \
-            rename(columns={0: f"original_{args.perturbation_type}",
-                            1: f"perturbed_{args.perturbation_type}",
-                            2: f"SRC-{args.perturbation_type}_perturbed"})
-        # Concatenate to the original dataframe
-        src_tgt_perturbed = pd.concat([src_tgt_perturbed, perturbed_df], axis='columns')
+        src_tgt_perturbed = perturb_sentences(src_tgt_perturbed, perturb_type=args.perturbation_type,
+                                              model=word_replacement_model,
+                                              replacement_strategy=args.replacement_strategy,
+                                              number_of_replacement=args.number_of_replacement)
 
         # Translate the perturbed sentences
         LOGGER.info("Translating perturbed SRC sentences.")
-        if args.dataname == "IWSLT15-en2vi":
+        if args.dataname in ["IWSLT15-en2vi", "manual_en2vi_bias", "IWSLT15_en2vi_bias", "IWSLT15_en2vi_bias_train",
+                             'covost2_countries_replacement_he', 'covost2_countries_replacement_she']:
             src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed-Trans"] = \
                 src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed"].apply(
                     lambda x: translate(src2tgt_model, tokenizer, x, args.beam, device))
@@ -176,8 +324,8 @@ def main():
                     src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed"].apply(
                         lambda x: src2tgt_model.translate(x, beam=args.beam))
 
-    LOGGER.info("Saving output")
-    src_tgt_perturbed.to_csv(f"{args.output_dir}/translations.csv")
+        LOGGER.info("Saving output")
+        src_tgt_perturbed.to_csv(f"{args.output_dir}/translations_{args.number_of_replacement}replacements.csv")
 
 
 def translate(model, tokenizer, src: str, beam: int, device) -> str:
@@ -206,29 +354,19 @@ def batch_translation(model, src_sentences: list, batch_size: int, beam: int) ->
     return translations
 
 
-def perturb_sentence(perturb_type, sentence, replacement_strategy, model):
+def perturb_sentences(src_df, perturb_type, replacement_strategy, number_of_replacement, model):
     """
-    Perturb a sentence by replacing a word
+    Perturb sentences (put in a dataframe) by replacing a word
+    :param src_df: the dataframe containing the source sentences
     :param perturb_type: can be 'noun', 'verb', 'adjective', 'adverb' or 'pronoun'
-    :param sentence: the original sentence to be perturbed
     :param replacement_strategy: 'word2vec_similarity' or 'masking_language_model'
+    :param number_of_replacement: number of words to replace the 1 SRC word
     :param model: word2vec model if replacement_strategy=='word2vec_similarity', a language model if
     replacement_strategy=='masking_language_model'
     :return: the perturbed sentence
     """
 
     stop_words = set(stopwords.words('english'))
-
-    # Word tokenizers is used to find the words
-    # and punctuation in a string
-    words = nltk.word_tokenize(sentence)
-
-    # removing stop words from wordList
-    words = [w for w in words if w not in stop_words]
-
-    # Perform part of speech tagging on the sentence
-    LOGGER.debug("POS tagging on the SRC sentences")
-    tagged = nltk.pos_tag(words)
 
     if perturb_type == 'noun':
         tag_prefix = 'NN'
@@ -243,61 +381,153 @@ def perturb_sentence(perturb_type, sentence, replacement_strategy, model):
     else:
         raise NotImplementedError
 
-    words_with_perturb_type = [x for x in tagged if x[1].startswith(tag_prefix)]
-    if len(words_with_perturb_type) == 0:
-        # This sentence does not have the word of that type
-        return None, None, sentence
+    perturbed_df = pd.DataFrame(
+        columns=list(src_df.columns) + [f"original_{perturb_type}", 'Replacement rank', f"perturbed_{perturb_type}",
+                                        f"SRC-{perturb_type}_perturbed"])
 
-    if replacement_strategy == 'word2vec_similarity':
-        LOGGER.debug("Choosing the src word that exist in the embedding vocal to perturb later on")
-        any_word_selected = False
-        for selected_word_with_tag in words_with_perturb_type:
-            # Select a word to perturb, that is in the word2vec model for convenience
-            selected_word = selected_word_with_tag[0]
-            selected_word_tag = selected_word_with_tag[1]
+    for index, row in src_df.iterrows():
+        perturbed_row = row.copy()
+        sentence = perturbed_row['SRC']
 
-            if selected_word in model.index_to_key:
-                any_word_selected = True
-                break
+        # Word tokenizers is used to find the words
+        # and punctuation in a string
+        words = nltk.word_tokenize(sentence)
 
-        if not any_word_selected:
-            return None, None, sentence
+        # removing stop words from wordList
+        words = [w for w in words if w not in stop_words]
 
-        # Find the word's closet neighbor using word2vec, that has the exact same tagging to avoid gramartical error
-        LOGGER.debug("Finding top similar words")
-        similar_words = model.most_similar(positive=[selected_word], topn=20)
-        similar_words = [x[0] for x in similar_words]  # Only keep the word and not the similarity score
-        selected_replacement_word = None
-        LOGGER.debug("Choosing the replacement word within similar words")
-        for similar_word in similar_words:
-            if nltk.pos_tag([similar_word])[0][1] == selected_word_tag:
-                selected_replacement_word = similar_word
-                break
-        perturbed_sentence = sentence
-        if selected_replacement_word is not None:
-            LOGGER.debug("Replacing old word with new word")
-            # Replace the selected word with the new word
-            perturbed_sentence = sentence.replace(selected_word, selected_replacement_word)
-        return selected_word, selected_replacement_word, perturbed_sentence
+        # Perform part of speech tagging on the sentence
+        LOGGER.debug("POS tagging on the SRC sentences")
+        tagged = nltk.pos_tag(words)
 
-    elif replacement_strategy == 'masking_language_model':
-        # Randomly select one word of the given type to perturb
-        selected_word = random.choice(words_with_perturb_type)[0]
-        # Mask the selected word in the original sentence
-        masked_sentence = sentence.replace(selected_word, '[MASK]', 1)
-        # Run model unmasking prediction
-        pred = model(masked_sentence)
-        if type(pred[0]) is list:
-            # Unravel the list
-            pred = pred[0]
-        # Choose the most probable word, if it is not the same as the original word
-        for candidate_replacement in pred:
-            if candidate_replacement['token_str'] != selected_word:
-                return selected_word, candidate_replacement['token_str'], candidate_replacement['sequence'].replace(
-                    '[CLS] ', '').replace(' [SEP]', '')
+        words_with_perturb_type = [x for x in tagged if x[1].startswith(tag_prefix)]
+        if len(words_with_perturb_type) == 0:
+            # This sentence does not have the word of that type
+            continue
 
-    else:
-        raise RuntimeError(f"Replacement strategy {args.replacement_strategy} not available.")
+        if replacement_strategy == 'word2vec_similarity':
+            LOGGER.debug("Choosing the src word that exist in the embedding vocal to perturb later on")
+            any_word_selected = False
+            for selected_word_with_tag in words_with_perturb_type:
+                # Select a word to perturb, that is in the word2vec model for convenience
+                selected_word = selected_word_with_tag[0]
+                selected_word_tag = selected_word_with_tag[1]
+
+                if selected_word in model.index_to_key:
+                    any_word_selected = True
+                    break
+
+            if not any_word_selected:
+                continue
+
+            # Find the word's closet neighbor using word2vec
+            LOGGER.debug("Finding top similar words")
+            similar_words = model.most_similar(positive=[selected_word], topn=20)
+            similar_words = [x[0] for x in similar_words]  # Only keep the word and not the similarity score
+            selected_replacement_words = []
+            LOGGER.debug("Choosing the replacement word within similar words")
+            for similar_word in similar_words:
+                # New word with exact same tagging to avoid gramartical error
+                # and not the same as the original word
+                if nltk.pos_tag([similar_word])[0][1] == selected_word_tag \
+                        and similar_word.lower() != selected_word.lower():
+                    selected_replacement_words.append(similar_word)
+
+            if len(selected_replacement_words) > 0:
+                # Replace the selected word with the new words
+                for replacement_i in range(0, min(number_of_replacement, len(selected_replacement_words))):
+                    perturbed_sentence = sentence.replace(selected_word, selected_replacement_words[i])
+                    perturbed_row[f"original_{perturb_type}"] = selected_word
+                    perturbed_row['Replacement rank'] = i + 1
+                    perturbed_row[f"perturbed_{perturb_type}"] = selected_replacement_words[i]
+                    perturbed_row[f"SRC-{perturb_type}_perturbed"] = perturbed_sentence
+                    perturbed_df = pd.concat([perturbed_df, perturbed_row.to_frame().T])
+            else:
+                continue
+
+        elif replacement_strategy == 'masking_language_model':
+            # Randomly select one word of the given type to perturb
+            selected_word = random.choice(words_with_perturb_type)[0]
+            # Mask the selected word in the original sentence
+            masked_sentence = sentence.replace(selected_word, '[MASK]', 1)
+            # Run model unmasking prediction
+            pred = model(masked_sentence, top_k=20)
+            if type(pred[0]) is list:
+                # Unravel the list
+                pred = pred[0]
+            # Choose the most probable word, if it is not the same as the original word (ignoring case and word form)
+            stemmer = SnowballStemmer("english")
+
+            count_replacement = 0
+            replacement_i = 0
+
+            while count_replacement < number_of_replacement:
+                candidate_replacement = pred[replacement_i]
+                if stemmer.stem(candidate_replacement['token_str'].lower()) != stemmer.stem(selected_word.lower()):
+                    count_replacement = count_replacement + 1
+                    perturbed_row[f"original_{perturb_type}"] = selected_word
+                    perturbed_row['Replacement rank'] = count_replacement
+                    perturbed_row[f"perturbed_{perturb_type}"] = candidate_replacement['token_str']
+                    perturbed_row[f"SRC-{perturb_type}_perturbed"] = candidate_replacement['sequence'].replace(
+                        '[CLS] ', '').replace(' [SEP]', '')
+                    perturbed_df = pd.concat([perturbed_df, perturbed_row.to_frame().T])
+                replacement_i = replacement_i + 1
+        else:
+            raise RuntimeError(f"Replacement strategy {args.replacement_strategy} not available.")
+
+    return perturbed_df
+
+
+def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, replacement_model):
+    """
+        Perturb sentences (put in a dataframe) by replacing a word. Here the provided sentences are already masked,
+        we only need to provide the replacement
+
+        :param masked_src_df: the dataframe containing the source sentences whose a single word is masked
+                                (i.e., containing one [MASK] token)
+        :param replacement_strategy: 'masking_language_model' ('word2vec_similarity' can be used in theory but not yet
+        implemented)
+        :param number_of_replacement: number of words to replace the 1 SRC word
+        :param replacement_model: word2vec model if replacement_strategy=='word2vec_similarity', a language model if
+        replacement_strategy=='masking_language_model'
+        :return: (an) unmasked sentence(s)
+    """
+    output_df = pd.DataFrame(
+        columns=list(masked_src_df.columns) + ['Replacement rank', f"perturbed_word", f"SRC_perturbed"]
+    )
+
+    for index, row in masked_src_df.iterrows():
+        unmasked_row = row.copy()
+        masked_sentence = unmasked_row['SRC_masked']
+        masked_word = unmasked_row['original_word']
+
+        if replacement_strategy == 'masking_language_model':
+            # Run model unmasking prediction
+            pred = replacement_model(masked_sentence, top_k=20)
+            if type(pred[0]) is list:
+                # Unravel the list
+                pred = pred[0]
+            # Choose the most probable word, if it is not the same as the original word (ignoring case and word form)
+            stemmer = SnowballStemmer("english")
+
+            count_replacement = 0
+            replacement_i = 0
+
+            while count_replacement < number_of_replacement:
+                candidate_replacement = pred[replacement_i]
+                if stemmer.stem(str(candidate_replacement['token_str']).lower()) != stemmer.stem(str(masked_word).lower()):
+                    count_replacement = count_replacement + 1
+                    unmasked_row['Replacement rank'] = count_replacement
+                    unmasked_row['perturbed_word'] = candidate_replacement['token_str']
+                    unmasked_row['SRC_perturbed'] = candidate_replacement['sequence'].replace(
+                        '[CLS] ', '').replace(' [SEP]', '')
+                    output_df = pd.concat([output_df, unmasked_row.to_frame().T])
+                replacement_i = replacement_i + 1
+
+        else:
+            raise RuntimeError(f"Replacement strategy {args.replacement_strategy} not available.")
+
+    return output_df
 
 
 if __name__ == "__main__":
