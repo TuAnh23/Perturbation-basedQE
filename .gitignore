@@ -11,3 +11,5 @@ data/*
 output/*
 .ipynb_checkpoints/*
 
+*.pkl
+*.png
