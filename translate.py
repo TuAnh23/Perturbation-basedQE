@@ -65,6 +65,9 @@ def main():
     parser.add_argument('--gpu', type=int, default=-1)
     parser.add_argument('--replacement_strategy', type=str, default='word2vec_similarity',
                         help='[word2vec_similarity|masking_language_model]. The later option is context-based.')
+    parser.add_argument('--premasked_groupped_by_word', type=str_to_bool, default=False,
+                        help='Whether the data is already masked, and the masking strategy is same words across'
+                             'multiple sentences.')
     parser.add_argument('--number_of_replacement', type=int, default=1,
                         help='The number of replacement for 1 SRC word')
     args = parser.parse_args()
@@ -259,10 +262,18 @@ def main():
         else:
             raise RuntimeError(f"Replacement strategy {args.replacement_strategy} not available.")
 
-        src_tgt_perturbed = replace_mask(masked_src_df=src_tgt_perturbed,
-                                         replacement_strategy=args.replacement_strategy,
-                                         number_of_replacement=args.number_of_replacement,
-                                         replacement_model=word_replacement_model)
+        if args.premasked_groupped_by_word:
+            src_tgt_perturbed = replace_mask_groupped_by_perturbed_word(
+                masked_src_df=src_tgt_perturbed,
+                replacement_strategy=args.replacement_strategy,
+                number_of_replacement=args.number_of_replacement,
+                replacement_model=word_replacement_model
+            )
+        else:
+            src_tgt_perturbed = replace_mask(masked_src_df=src_tgt_perturbed,
+                                             replacement_strategy=args.replacement_strategy,
+                                             number_of_replacement=args.number_of_replacement,
+                                             replacement_model=word_replacement_model)
 
         # Translate the perturbed sentences
         LOGGER.info("Translating perturbed SRC sentences.")
@@ -478,6 +489,118 @@ def perturb_sentences(src_df, perturb_type, replacement_strategy, number_of_repl
     return perturbed_df
 
 
+def replace_mask_single_group(masked_src_df, replacement_strategy, number_of_replacement, replacement_model):
+    """
+    Unmask a group of sentences that are masked with the same word. We chose the top-5 replacements across the whole
+    group of sentences
+    :param masked_src_df: df of sentences that are masked at the same word
+    :param replacement_strategy: 'masking_language_model' ('word2vec_similarity' can be used in theory but not yet
+    implemented)
+    :param number_of_replacement: number of words to replace the 1 SRC word
+    :param replacement_model: word2vec model if replacement_strategy=='word2vec_similarity', a language model if
+    replacement_strategy=='masking_language_model'
+    :return: unmasked sentences
+    """
+
+    if replacement_strategy != 'masking_language_model':
+        raise RuntimeError(f"Replacement strategy {replacement_strategy} not available.")
+
+    count_original_word = masked_src_df['original_word'].value_counts()
+    assert count_original_word.shape[0] == 1  # Because this function is for a single group
+    original_word = count_original_word.index[0]
+
+    # For each sentence, get the unmasking candidates and the corresponding confidence score
+    sentence_dict = {}
+    for index, row in masked_src_df.iterrows():
+        # Run model unmasking prediction
+        pred = replacement_model(row['SRC_masked'], top_k=30)
+        if type(pred[0]) is list:
+            # Unravel the list
+            pred = pred[0]
+
+        # Put replacement with score and rank in a dict
+        replacement_confidence_dict = {}
+        for rank, replacement in enumerate(pred):
+            replacement_confidence_dict[replacement['token_str']] = {'score': replacement['score'],
+                                                                     'rank_within_sentence': rank}
+
+        # Store the dict for the corresponding sentence
+        sentence_dict[row['SRC_index']] = replacement_confidence_dict
+
+    # Create a dataframe that stores all the replacements and their confidence scores for each sentence
+    # If a replacement is not output for a sentence, then it's confidence score is 0
+
+    # Collect all possible replacement across sentences
+    all_replacements = set(
+        sum(
+            [list(replacement_confidence_dict.keys())
+                for replacement_confidence_dict in sentence_dict.values()],
+            []
+        )
+    )
+
+    # Filter out the replacements that are the same as the original word (ignoring case and word form)
+    # This will be used as the index for the replacement dataframe
+    index = []
+    stemmer = SnowballStemmer("english")
+    for replacement in all_replacements:
+        if stemmer.stem(str(replacement).lower()) != stemmer.stem(str(original_word).lower()):
+            index.append(replacement)
+
+    # Put to the dataframe
+    replacement_df_score = pd.DataFrame(data=0, index=index, columns=sentence_dict.keys())
+    replacement_df_rank = pd.DataFrame(data='>30', index=index, columns=sentence_dict.keys())
+    for sentence, replacement_confidence_dict in sentence_dict.items():
+        for replacement, score_rank in replacement_confidence_dict.items():
+            if replacement in index:
+                replacement_df_score.loc[replacement, sentence] = score_rank['score']
+                replacement_df_rank.loc[replacement, sentence] = score_rank['rank_within_sentence']
+
+    # Find the top_k best replacements across all sentences
+    top_k = replacement_df_score.mean(axis=1).sort_values(ascending=False).index[:number_of_replacement].to_list()
+
+    # Create a dataframe of unmasked sentences
+    output_df = pd.DataFrame(
+        columns=list(masked_src_df.columns) + ['Replacement_confidence', "perturbed_word", "SRC_perturbed"]
+    )
+
+    for sentence_index, sentence_row in masked_src_df.iterrows():
+        unmasked_row = sentence_row.copy()
+        for replacement in top_k:
+            unmasked_row['Replacement_confidence'] = replacement_df_score.loc[replacement, sentence_row['SRC_index']]
+            unmasked_row['Replacement_rank_within_sentence'] = replacement_df_rank.loc[replacement, sentence_row['SRC_index']]
+            unmasked_row['perturbed_word'] = replacement
+            unmasked_row['SRC_perturbed'] = sentence_row['SRC_masked'].replace('[MASK]', replacement)
+            output_df = pd.concat([output_df, unmasked_row.to_frame().T])
+
+    return output_df
+
+
+def replace_mask_groupped_by_perturbed_word(masked_src_df, replacement_strategy, number_of_replacement,
+                                            replacement_model):
+    """
+        Perturb sentences (put in a dataframe) by replacing a word. Here the provided sentences are already masked,
+        we only need to provide the replacement. We chose the top-5 replacements across the whole group of sentences
+
+        :param masked_src_df: the dataframe containing the source sentences whose a single word is masked
+                                (i.e., containing one [MASK] token)
+        :param replacement_strategy: 'masking_language_model' ('word2vec_similarity' can be used in theory but not yet
+        implemented)
+        :param number_of_replacement: number of words to replace the 1 SRC word
+        :param replacement_model: word2vec model if replacement_strategy=='word2vec_similarity', a language model if
+        replacement_strategy=='masking_language_model'
+        :return: unmasked sentences
+    """
+    output_df = pd.DataFrame()
+
+    groupped = masked_src_df.groupby('original_word')
+    for original_word, group in groupped:
+        tmp_df = replace_mask_single_group(group, replacement_strategy, number_of_replacement, replacement_model)
+        output_df = pd.concat([output_df, tmp_df])
+
+    return output_df
+
+
 def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, replacement_model):
     """
         Perturb sentences (put in a dataframe) by replacing a word. Here the provided sentences are already masked,
@@ -515,7 +638,8 @@ def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, rep
 
             while count_replacement < number_of_replacement:
                 candidate_replacement = pred[replacement_i]
-                if stemmer.stem(str(candidate_replacement['token_str']).lower()) != stemmer.stem(str(masked_word).lower()):
+                if stemmer.stem(str(candidate_replacement['token_str']).lower()) != stemmer.stem(
+                        str(masked_word).lower()):
                     count_replacement = count_replacement + 1
                     unmasked_row['Replacement rank'] = count_replacement
                     unmasked_row['perturbed_word'] = candidate_replacement['token_str']
