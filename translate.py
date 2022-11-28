@@ -11,6 +11,8 @@ from transformers import pipeline
 from html import unescape
 import numpy as np
 from nltk.stem.snowball import SnowballStemmer
+from torch.utils.data import Dataset
+
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -22,6 +24,20 @@ LOGGER = logging.getLogger(__name__)
 
 
 # nltk.download()
+
+class MaskedSentencesDataset(Dataset):
+    def __init__(self, samples):
+        """
+        :param samples: list of masked sentences
+        """
+        self.samples = samples
+
+    def __getitem__(self, index):
+        return self.samples[index]
+
+    def __len__(self):
+        return len(self.samples)
+
 
 def set_seed(seed=0):
     """Set the random seed for torch.
@@ -184,7 +200,8 @@ def main():
         src_tgt_df = pd.read_csv(f"{args.data_root_dir}/winoMT_src.csv", index_col=0)
 
     elif args.dataname in ["masked_regional_covost2_for_en2de", 'masked_occupation_covost2_for_en2de',
-                           'masked_content_covost2_for_en2de']:
+                           'masked_content_covost2_for_en2de', 'masked_content_covost2_for_en2de_no_sentence_group',
+                           'masked_content_winoMT']:
         LOGGER.info("Loading pretrained translation model")
         src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
                                        checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
@@ -462,7 +479,7 @@ def perturb_sentences(src_df, perturb_type, replacement_strategy, number_of_repl
             # Mask the selected word in the original sentence
             masked_sentence = sentence.replace(selected_word, '[MASK]', 1)
             # Run model unmasking prediction
-            pred = model(masked_sentence, top_k=20)
+            pred = model(masked_sentence, top_k=40)
             if type(pred[0]) is list:
                 # Unravel the list
                 pred = pred[0]
@@ -615,21 +632,22 @@ def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, rep
         replacement_strategy=='masking_language_model'
         :return: (an) unmasked sentence(s)
     """
+    # Unmask all sentences, save raw unmasking value from the bert model
+    # Do not do it within the loop for better GPU efficiency
+    masked_dataset = MaskedSentencesDataset(masked_src_df['SRC_masked'].values)
+    masked_src_df['raw_unmasks_bert'] = replacement_model(masked_dataset, top_k=40)
+
     output_df = pd.DataFrame(
         columns=list(masked_src_df.columns) + ['Replacement rank', f"perturbed_word", f"SRC_perturbed"]
     )
 
     for index, row in masked_src_df.iterrows():
         unmasked_row = row.copy()
-        masked_sentence = unmasked_row['SRC_masked']
         masked_word = unmasked_row['original_word']
 
         if replacement_strategy == 'masking_language_model':
-            # Run model unmasking prediction
-            pred = replacement_model(masked_sentence, top_k=20)
-            if type(pred[0]) is list:
-                # Unravel the list
-                pred = pred[0]
+            pred = row['raw_unmasks_bert']
+
             # Choose the most probable word, if it is not the same as the original word (ignoring case and word form)
             stemmer = SnowballStemmer("english")
 
@@ -650,6 +668,8 @@ def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, rep
 
         else:
             raise RuntimeError(f"Replacement strategy {args.replacement_strategy} not available.")
+
+    output_df = output_df.drop('raw_unmasks_bert', axis=1)
 
     return output_df
 
