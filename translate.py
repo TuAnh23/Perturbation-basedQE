@@ -70,6 +70,7 @@ def main():
     parser.add_argument('--dataname', type=str, default="MuST-SHE-en2fr",
                         help="[MuST-SHE-en2fr|Europarl-en2de|IWSLT15-en2vi|wmt19-newstest2019-en2de|"
                              "masked_covost2_for_en2de]")
+    parser.add_argument('--trans_direction', type=str, default="en2de")
     parser.add_argument('--perturbation_type', type=none_or_str, default=None)
     parser.add_argument('--beam', type=int, default=5)
     parser.add_argument('--seed', type=int, default=0)
@@ -92,23 +93,12 @@ def main():
     set_seed(args.seed)
 
     if args.dataname == "MuST-SHE-en2fr":
-        LOGGER.info("Loading pretrained translation model")
-        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt14.en-fr')
-        src2tgt_model.eval()  # disable dropout
-        src2tgt_model.cuda()  # move model to GPU
-
         # Load test translation data
         src_tgt_df = pd.read_csv(f"{args.data_root_dir}/MuST-SHE_v1.2/MuST-SHE-v1.2-data/tsv/MONOLINGUAL.fr_v1.2.tsv",
                                  sep='\t', index_col=0)[['SRC', "REF"]]
 
     elif args.dataname == "Europarl-en2de":
         # Use test data from Europarl at https://www.statmt.org/europarl/archives.html
-        LOGGER.info("Loading pretrained translation model")
-        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
-                                       checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
-        src2tgt_model.eval()  # disable dropout
-        src2tgt_model.cuda()  # move model to GPU
-
         # Load test translation data
         with open(f"{args.data_root_dir}/common-test/ep-test.en", encoding="ISO-8859-1") as f:
             en_sentences = f.readlines()
@@ -129,36 +119,8 @@ def main():
             vi_sentences = [unescape(line) for line in vi_sentences]
         src_tgt_df = pd.DataFrame(data={'SRC': en_sentences, 'REF': vi_sentences})
 
-        # Use en-vi model at https://huggingface.co/NlpHUST/t5-en-vi-small
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-            print('There are %d GPU(s) available.' % torch.cuda.device_count())
-            print('We will use the GPU:', torch.cuda.get_device_name(0))
-        else:
-            print('No GPU available, using  CPU instead.')
-            device = torch.device("cpu")
-
-        src2tgt_model = T5ForConditionalGeneration.from_pretrained("NlpHUST/t5-en-vi-small")
-        tokenizer = T5Tokenizer.from_pretrained("NlpHUST/t5-en-vi-small")
-        src2tgt_model.to(device)
-        src2tgt_model.eval()
-
     elif args.dataname in ["manual_en2vi_bias", "IWSLT15_en2vi_bias", "IWSLT15_en2vi_bias_train"]:
         src_tgt_df = pd.read_csv(f"{args.data_root_dir}/en2vi_bias/{args.dataname}.csv", index_col=0)
-
-        # Use en-vi model at https://huggingface.co/NlpHUST/t5-en-vi-small
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-            print('There are %d GPU(s) available.' % torch.cuda.device_count())
-            print('We will use the GPU:', torch.cuda.get_device_name(0))
-        else:
-            print('No GPU available, using  CPU instead.')
-            device = torch.device("cpu")
-
-        src2tgt_model = T5ForConditionalGeneration.from_pretrained("NlpHUST/t5-en-vi-small")
-        tokenizer = T5Tokenizer.from_pretrained("NlpHUST/t5-en-vi-small")
-        src2tgt_model.to(device)
-        src2tgt_model.eval()
 
     elif args.dataname in ['covost2_countries_replacement_he', 'covost2_countries_replacement_she']:
         src_tgt_df = pd.read_csv(f"{args.data_root_dir}/covost2/{args.dataname}.csv", index_col=0)
@@ -179,46 +141,19 @@ def main():
 
     elif args.dataname == 'covost2_countries_replacement_you':
         # Test data at https://www.statmt.org/wmt19/metrics-task.html
-        LOGGER.info("Loading pretrained translation model")
-        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
-                                       checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
-        src2tgt_model.eval()  # disable dropout
-        src2tgt_model.cuda()  # move model to GPU
-
         # Load translation data
         src_tgt_df = pd.read_csv(f"{args.data_root_dir}/covost2/{args.dataname}.csv", index_col=0)
 
     elif args.dataname == 'winoMT_src':
-        # Test data at https://www.statmt.org/wmt19/metrics-task.html
-        LOGGER.info("Loading pretrained translation model")
-        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
-                                       checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
-        src2tgt_model.eval()  # disable dropout
-        src2tgt_model.cuda()  # move model to GPU
-
         # Load translation data
         src_tgt_df = pd.read_csv(f"{args.data_root_dir}/winoMT_src.csv", index_col=0)
 
-    elif args.dataname in ["masked_regional_covost2_for_en2de", 'masked_occupation_covost2_for_en2de',
-                           'masked_content_covost2_for_en2de', 'masked_content_covost2_for_en2de_no_sentence_group',
-                           'masked_content_winoMT']:
-        LOGGER.info("Loading pretrained translation model")
-        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
-                                       checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
-        src2tgt_model.eval()  # disable dropout
-        src2tgt_model.cuda()  # move model to GPU
-
+    elif args.dataname.startswith('masked'):
         # Load translation data
         src_tgt_df = pd.read_csv(f"{args.data_root_dir}/{args.dataname}.csv", index_col=0)
 
     elif args.dataname == 'wmt19-newstest2019-en2de':
         # Test data at https://www.statmt.org/wmt19/metrics-task.html
-        LOGGER.info("Loading pretrained translation model")
-        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
-                                       checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
-        src2tgt_model.eval()  # disable dropout
-        src2tgt_model.cuda()  # move model to GPU
-
         # Load test translation data
         with open(f"{args.data_root_dir}/wmt19-submitted-data-v3/txt/sources/newstest2019-ende-src.en") as f:
             en_sentences = f.readlines()
@@ -230,6 +165,33 @@ def main():
 
     else:
         raise RuntimeError(f"Dataset {args.dataname} not available.")
+
+    LOGGER.info("Loading pretrained translation model")
+    if args.trans_direction == 'en2de':
+        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
+                                       checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
+        src2tgt_model.eval()  # disable dropout
+        src2tgt_model.cuda()  # move model to GPU
+    elif args.trans_direction == 'en2fr':
+        src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt14.en-fr')
+        src2tgt_model.eval()  # disable dropout
+        src2tgt_model.cuda()  # move model to GPU
+    elif args.trans_direction == 'en2vi':
+        # Use en-vi model at https://huggingface.co/NlpHUST/t5-en-vi-small
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print('There are %d GPU(s) available.' % torch.cuda.device_count())
+            print('We will use the GPU:', torch.cuda.get_device_name(0))
+        else:
+            print('No GPU available, using  CPU instead.')
+            device = torch.device("cpu")
+
+        src2tgt_model = T5ForConditionalGeneration.from_pretrained("NlpHUST/t5-en-vi-small")
+        tokenizer = T5Tokenizer.from_pretrained("NlpHUST/t5-en-vi-small")
+        src2tgt_model.to(device)
+        src2tgt_model.eval()
+    else:
+        raise RuntimeError(f"Direction {args.trans_direction} not available.")
 
     if "SRC_index" not in src_tgt_df.columns:
         src_tgt_df.insert(0, column="SRC_index", value=src_tgt_df.index.values)
@@ -245,8 +207,7 @@ def main():
     if args.perturbation_type is None:
         # Translate the original source sentences
         LOGGER.info("Translating original SRC sentences.")
-        if args.dataname in ["IWSLT15-en2vi", "manual_en2vi_bias", "IWSLT15_en2vi_bias", "IWSLT15_en2vi_bias_train",
-                             'covost2_countries_replacement_he', 'covost2_countries_replacement_she']:
+        if args.trans_direction == 'en2vi':
             src_tgt_perturbed["OriginalSRC-Trans"] = src_tgt_perturbed['SRC'].apply(
                 lambda x: translate(src2tgt_model, tokenizer, x, args.beam, device))
         else:
@@ -294,16 +255,21 @@ def main():
 
         # Translate the perturbed sentences
         LOGGER.info("Translating perturbed SRC sentences.")
-        if args.batch_size > 1:
-            src_tgt_perturbed[f"SRC_perturbed-Trans"] = \
-                batch_translation(model=src2tgt_model,
-                                  src_sentences=src_tgt_perturbed[
-                                      f"SRC_perturbed"].tolist(),
-                                  beam=args.beam, batch_size=args.batch_size)
-        else:
-            src_tgt_perturbed[f"SRC_perturbed-Trans"] = \
+        if args.trans_direction == 'en2vi':
+            src_tgt_perturbed["SRC_perturbed-Trans"] = \
                 src_tgt_perturbed[f"SRC_perturbed"].apply(
-                    lambda x: src2tgt_model.translate(x, beam=args.beam))
+                    lambda x: translate(src2tgt_model, tokenizer, x, args.beam, device))
+        else:
+            if args.batch_size > 1:
+                src_tgt_perturbed["SRC_perturbed-Trans"] = \
+                    batch_translation(model=src2tgt_model,
+                                      src_sentences=src_tgt_perturbed[
+                                          "SRC_perturbed"].tolist(),
+                                      beam=args.beam, batch_size=args.batch_size)
+            else:
+                src_tgt_perturbed["SRC_perturbed-Trans"] = \
+                    src_tgt_perturbed["SRC_perturbed"].apply(
+                        lambda x: src2tgt_model.translate(x, beam=args.beam))
 
         LOGGER.info("Saving output")
         src_tgt_perturbed.to_csv(f"{args.output_dir}/translations_{args.number_of_replacement}replacements.csv")
@@ -335,8 +301,7 @@ def main():
 
         # Translate the perturbed sentences
         LOGGER.info("Translating perturbed SRC sentences.")
-        if args.dataname in ["IWSLT15-en2vi", "manual_en2vi_bias", "IWSLT15_en2vi_bias", "IWSLT15_en2vi_bias_train",
-                             'covost2_countries_replacement_he', 'covost2_countries_replacement_she']:
+        if args.trans_direction == 'en2vi':
             src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed-Trans"] = \
                 src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed"].apply(
                     lambda x: translate(src2tgt_model, tokenizer, x, args.beam, device))

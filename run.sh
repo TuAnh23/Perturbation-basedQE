@@ -10,20 +10,21 @@ export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
 nvidia-smi
 
-dataname="masked_content_covost2_for_en2de"
-premasked_groupped_by_word="True"
+dataname="masked_content_mustSHE"
+trans_direction="en2vi"
+premasked_groupped_by_word="False"
 data_root_dir="data"
 batch_size=60
 seed=0
 replacement_strategy="masking_language_model"
-number_of_replacement=5
+number_of_replacement=30
 
 declare -a perturbation_types=("noun" "verb" "adjective" "adverb" "pronoun" )
 
 #for beam in {5..1}; do
 #  for perturbation_type in ${perturbation_types[@]}; do
 #    timestamp=$(date +"%d-%m-%y-%T")
-#    output_dir=output/${dataname}/${replacement_strategy}/beam${beam}_perturb${perturbation_type}/seed${seed}
+#    output_dir=output/${dataname}_${trans_direction}/${replacement_strategy}/beam${beam}_perturb${perturbation_type}/seed${seed}
 #    mkdir -p ${output_dir}
 #    python -u translate.py \
 #      --data_root_dir ${data_root_dir} \
@@ -35,6 +36,7 @@ declare -a perturbation_types=("noun" "verb" "adjective" "adverb" "pronoun" )
 #      --batch_size ${batch_size} \
 #      --replacement_strategy ${replacement_strategy} \
 #      --number_of_replacement ${number_of_replacement} \
+#      --trans_direction ${trans_direction} \
 #      |& tee -a ${output_dir}/output_job_${timestamp}.txt
 #  done
 #done
@@ -42,7 +44,7 @@ declare -a perturbation_types=("noun" "verb" "adjective" "adverb" "pronoun" )
 beam=5
 perturbation_type="content"
 timestamp=$(date +"%d-%m-%y-%T")
-output_dir=output/${dataname}/${replacement_strategy}/beam${beam}_perturb${perturbation_type}/seed${seed}
+output_dir=output/${dataname}_${trans_direction}/${replacement_strategy}/beam${beam}_perturb${perturbation_type}/seed${seed}
 mkdir -p ${output_dir}
 python -u translate.py \
   --data_root_dir ${data_root_dir} \
@@ -55,4 +57,5 @@ python -u translate.py \
   --replacement_strategy ${replacement_strategy} \
   --number_of_replacement ${number_of_replacement} \
   --premasked_groupped_by_word ${premasked_groupped_by_word} \
+  --trans_direction ${trans_direction} \
   |& tee -a ${output_dir}/output_job_${timestamp}.txt
