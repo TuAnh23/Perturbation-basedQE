@@ -167,15 +167,19 @@ def main():
         raise RuntimeError(f"Dataset {args.dataname} not available.")
 
     LOGGER.info("Loading pretrained translation model")
+    tokenizer = None
+    device = None
     if args.trans_direction == 'en2de':
         src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-de', tokenizer='moses', bpe='fastbpe',
                                        checkpoint_file='model1.pt:model2.pt:model3.pt:model4.pt')
         src2tgt_model.eval()  # disable dropout
         src2tgt_model.cuda()  # move model to GPU
+        src2tgt_model_type = 'fairseq'
     elif args.trans_direction == 'en2fr':
         src2tgt_model = torch.hub.load('pytorch/fairseq', 'transformer.wmt14.en-fr')
         src2tgt_model.eval()  # disable dropout
         src2tgt_model.cuda()  # move model to GPU
+        src2tgt_model_type = 'fairseq'
     elif args.trans_direction == 'en2vi':
         # Use en-vi model at https://huggingface.co/NlpHUST/t5-en-vi-small
         if torch.cuda.is_available():
@@ -190,6 +194,7 @@ def main():
         tokenizer = T5Tokenizer.from_pretrained("NlpHUST/t5-en-vi-small")
         src2tgt_model.to(device)
         src2tgt_model.eval()
+        src2tgt_model_type = 'huggingface'
     else:
         raise RuntimeError(f"Direction {args.trans_direction} not available.")
 
@@ -207,19 +212,13 @@ def main():
     if args.perturbation_type is None:
         # Translate the original source sentences
         LOGGER.info("Translating original SRC sentences.")
-        if args.trans_direction == 'en2vi':
-            src_tgt_perturbed["OriginalSRC-Trans"] = src_tgt_perturbed['SRC'].apply(
-                lambda x: translate(src2tgt_model, tokenizer, x, args.beam, device))
-        else:
-            if args.batch_size > 1:
-                src_tgt_perturbed["OriginalSRC-Trans"] = batch_translation(
-                    model=src2tgt_model,
-                    src_sentences=src_tgt_perturbed['SRC'].tolist(),
-                    beam=args.beam, batch_size=args.batch_size
-                )
-            else:
-                src_tgt_perturbed["OriginalSRC-Trans"] = src_tgt_perturbed['SRC'].apply(
-                    lambda x: src2tgt_model.translate(x, beam=args.beam))
+        src_tgt_perturbed["OriginalSRC-Trans"] = batch_translation(
+            model=src2tgt_model,
+            tokenizer=tokenizer,
+            src_sentences=src_tgt_perturbed['SRC'].tolist(),
+            beam=args.beam, batch_size=args.batch_size,
+            device=device, model_type=src2tgt_model_type
+        )
         LOGGER.info("Saving output")
         src_tgt_perturbed.to_csv(f"{args.output_dir}/translations.csv")
 
@@ -255,22 +254,13 @@ def main():
 
         # Translate the perturbed sentences
         LOGGER.info("Translating perturbed SRC sentences.")
-        if args.trans_direction == 'en2vi':
-            src_tgt_perturbed["SRC_perturbed-Trans"] = \
-                src_tgt_perturbed[f"SRC_perturbed"].apply(
-                    lambda x: translate(src2tgt_model, tokenizer, x, args.beam, device))
-        else:
-            if args.batch_size > 1:
-                src_tgt_perturbed["SRC_perturbed-Trans"] = \
-                    batch_translation(model=src2tgt_model,
-                                      src_sentences=src_tgt_perturbed[
-                                          "SRC_perturbed"].tolist(),
-                                      beam=args.beam, batch_size=args.batch_size)
-            else:
-                src_tgt_perturbed["SRC_perturbed-Trans"] = \
-                    src_tgt_perturbed["SRC_perturbed"].apply(
-                        lambda x: src2tgt_model.translate(x, beam=args.beam))
-
+        src_tgt_perturbed["SRC_perturbed-Trans"] = batch_translation(
+            model=src2tgt_model,
+            tokenizer=tokenizer,
+            src_sentences=src_tgt_perturbed["SRC_perturbed"].tolist(),
+            beam=args.beam, batch_size=args.batch_size,
+            device=device, model_type=src2tgt_model_type
+        )
         LOGGER.info("Saving output")
         src_tgt_perturbed.to_csv(f"{args.output_dir}/translations_{args.number_of_replacement}replacements.csv")
 
@@ -301,49 +291,62 @@ def main():
 
         # Translate the perturbed sentences
         LOGGER.info("Translating perturbed SRC sentences.")
-        if args.trans_direction == 'en2vi':
-            src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed-Trans"] = \
-                src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed"].apply(
-                    lambda x: translate(src2tgt_model, tokenizer, x, args.beam, device))
-        else:
-            if args.batch_size > 1:
-                src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed-Trans"] = \
-                    batch_translation(model=src2tgt_model,
-                                      src_sentences=src_tgt_perturbed[
-                                          f"SRC-{args.perturbation_type}_perturbed"].tolist(),
-                                      beam=args.beam, batch_size=args.batch_size)
-            else:
-                src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed-Trans"] = \
-                    src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed"].apply(
-                        lambda x: src2tgt_model.translate(x, beam=args.beam))
-
+        src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed-Trans"] = batch_translation(
+            model=src2tgt_model,
+            tokenizer=tokenizer,
+            src_sentences=src_tgt_perturbed[f"SRC-{args.perturbation_type}_perturbed"].tolist(),
+            beam=args.beam, batch_size=args.batch_size,
+            device=device, model_type=src2tgt_model_type
+        )
         LOGGER.info("Saving output")
         src_tgt_perturbed.to_csv(f"{args.output_dir}/translations_{args.number_of_replacement}replacements.csv")
 
 
-def translate(model, tokenizer, src: str, beam: int, device) -> str:
-    # Only compatible for huggingface transformer models
-    tokenized_text = tokenizer.encode(src, return_tensors="pt").to(device)
+def translate_single_batch_huggingface(model, tokenizer, src_sentences: list, beam: int, device) -> list:
+    # Only compatible for huggingface T5 transformer models
+    inputs = tokenizer(src_sentences, return_tensors="pt", padding=True).to(device)
     summary_ids = model.generate(
-        tokenized_text,
+        input_ids=inputs["input_ids"],
+        attention_mask=inputs["attention_mask"],
         max_length=128,
         num_beams=beam,
         repetition_penalty=2.5,
         length_penalty=1.0,
         early_stopping=True
     )
-    output = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-    return output
+    outputs = tokenizer.batch_decode(summary_ids, skip_special_tokens=True)
+    return outputs
 
 
-def batch_translation(model, src_sentences: list, batch_size: int, beam: int) -> list:
+def translate_single_batch_fairseq(model, src_sentences: list, beam: int) -> list:
     # Only compatible for fairseq models
+    return model.translate(src_sentences, beam=beam)
+
+
+def batch_translation(model, tokenizer, src_sentences: list, batch_size: int, beam: int, device, model_type) -> list:
     translations = []
     for i in range(0, len(src_sentences), batch_size):
+        # Define the slice of sentences to translate in this batch
+        start_slice = i
         if i + batch_size > len(src_sentences):
-            translations = translations + model.translate(src_sentences[i:len(src_sentences)], beam=beam)
+            stop_slice = len(src_sentences)
         else:
-            translations = translations + model.translate(src_sentences[i:i + batch_size], beam=beam)
+            stop_slice = i + batch_size
+
+        # Translate and append to final translation list
+        if model_type == 'fairseq':
+            translations = translations + translate_single_batch_fairseq(model,
+                                                                         src_sentences[start_slice:stop_slice],
+                                                                         beam)
+        elif model_type == 'huggingface':
+            translations = translations + translate_single_batch_huggingface(model,
+                                                                             tokenizer,
+                                                                             src_sentences[start_slice:stop_slice],
+                                                                             beam,
+                                                                             device)
+        else:
+            raise RuntimeError(f'Model type {model_type} not found.')
+
     return translations
 
 
