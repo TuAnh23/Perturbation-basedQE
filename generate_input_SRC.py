@@ -148,8 +148,8 @@ def main():
     else:
         raise RuntimeError(f"Dataset {args.dataname} not available.")
 
-    if "SRC_index" not in src_df.columns:
-        src_df.insert(0, column="SRC_index", value=src_df.index.values)
+    if "SRC_masked_index" not in src_df.columns:
+        src_df.insert(0, column="SRC_masked_index", value=src_df.index.values)
 
     if args.ignore_case:
         src_df = src_df.applymap(lambda x: x.lower())
@@ -381,7 +381,7 @@ def replace_mask_single_group(masked_src_df, replacement_strategy, number_of_rep
                                                                      'rank_within_sentence': rank}
 
         # Store the dict for the corresponding sentence
-        sentence_dict[row['SRC_index']] = replacement_confidence_dict
+        sentence_dict[row['SRC_masked_index']] = replacement_confidence_dict
 
     # Create a dataframe that stores all the replacements and their confidence scores for each sentence
     # If a replacement is not output for a sentence, then it's confidence score is 0
@@ -423,9 +423,10 @@ def replace_mask_single_group(masked_src_df, replacement_strategy, number_of_rep
     for sentence_index, sentence_row in masked_src_df.iterrows():
         unmasked_row = sentence_row.copy()
         for replacement in top_k:
-            unmasked_row['Replacement_confidence'] = replacement_df_score.loc[replacement, sentence_row['SRC_index']]
+            unmasked_row['Replacement_confidence'] = replacement_df_score.loc[
+                replacement, sentence_row['SRC_masked_index']]
             unmasked_row['Replacement_rank_within_sentence'] = replacement_df_rank.loc[
-                replacement, sentence_row['SRC_index']]
+                replacement, sentence_row['SRC_masked_index']]
             unmasked_row['perturbed_word'] = replacement
             unmasked_row['SRC_perturbed'] = sentence_row['SRC_masked'].replace('[MASK]', replacement)
             output_df = pd.concat([output_df, unmasked_row.to_frame().T])
