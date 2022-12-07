@@ -11,6 +11,7 @@ from html import unescape
 import numpy as np
 from nltk.stem.snowball import SnowballStemmer
 from torch.utils.data import Dataset
+from sacremoses import MosesTokenizer
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -63,8 +64,9 @@ def main():
         else:
             raise ValueError
 
-    parser = argparse.ArgumentParser(description='Translate with perturbation to source sentences.')
+    parser = argparse.ArgumentParser()
     parser.add_argument('--data_root_dir', type=str, default="data")
+    parser.add_argument('--src_lang', type=str, default="en")
     parser.add_argument('--dataname', type=str, default="MuST-SHE-en2fr",
                         help="[MuST-SHE-en2fr|Europarl-en2de|IWSLT15-en2vi|wmt19-newstest2019-en2de|"
                              "masked_covost2_for_en2de]")
@@ -89,7 +91,7 @@ def main():
     if args.dataname == "MuST-SHE-en2fr":
         # Load test translation data
         src_df = pd.read_csv(f"{args.data_root_dir}/MuST-SHE_v1.2/MuST-SHE-v1.2-data/tsv/MONOLINGUAL.fr_v1.2.tsv",
-                                 sep='\t', index_col=0)[['SRC', "REF"]]
+                             sep='\t', index_col=0)[['SRC', "REF"]]
 
     elif args.dataname == "Europarl-en2de":
         # Use test data from Europarl at https://www.statmt.org/europarl/archives.html
@@ -210,16 +212,17 @@ def main():
             raise RuntimeError(f"Replacement strategy {args.replacement_strategy} not available.")
 
         src_perturbed = perturb_sentences(src_perturbed, perturb_type=args.perturbation_type,
-                                              model=word_replacement_model,
-                                              replacement_strategy=args.replacement_strategy,
-                                              number_of_replacement=args.number_of_replacement)
+                                          model=word_replacement_model,
+                                          replacement_strategy=args.replacement_strategy,
+                                          number_of_replacement=args.number_of_replacement,
+                                          src_lang=args.src_lang)
 
     LOGGER.info("Saving input SRC")
     # Saving the perturbed source sentences
     src_perturbed.to_csv(f"{args.output_dir}/input.csv")
 
 
-def perturb_sentences(src_df, perturb_type, replacement_strategy, number_of_replacement, model):
+def perturb_sentences(src_df, perturb_type, replacement_strategy, number_of_replacement, model, src_lang):
     """
     Perturb sentences (put in a dataframe) by replacing a word
     :param src_df: the dataframe containing the source sentences
@@ -254,9 +257,8 @@ def perturb_sentences(src_df, perturb_type, replacement_strategy, number_of_repl
         perturbed_row = row.copy()
         sentence = perturbed_row['SRC']
 
-        # Word tokenizers is used to find the words
-        # and punctuation in a string
-        words = nltk.word_tokenize(sentence)
+        tokenizer = MosesTokenizer(lang=src_lang)
+        words = tokenizer.tokenize(sentence, escape=False, aggressive_dash_splits=False)
 
         # removing stop words from wordList
         words = [w for w in words if w not in stop_words]
@@ -388,7 +390,7 @@ def replace_mask_single_group(masked_src_df, replacement_strategy, number_of_rep
     all_replacements = set(
         sum(
             [list(replacement_confidence_dict.keys())
-                for replacement_confidence_dict in sentence_dict.values()],
+             for replacement_confidence_dict in sentence_dict.values()],
             []
         )
     )
@@ -422,7 +424,8 @@ def replace_mask_single_group(masked_src_df, replacement_strategy, number_of_rep
         unmasked_row = sentence_row.copy()
         for replacement in top_k:
             unmasked_row['Replacement_confidence'] = replacement_df_score.loc[replacement, sentence_row['SRC_index']]
-            unmasked_row['Replacement_rank_within_sentence'] = replacement_df_rank.loc[replacement, sentence_row['SRC_index']]
+            unmasked_row['Replacement_rank_within_sentence'] = replacement_df_rank.loc[
+                replacement, sentence_row['SRC_index']]
             unmasked_row['perturbed_word'] = replacement
             unmasked_row['SRC_perturbed'] = sentence_row['SRC_masked'].replace('[MASK]', replacement)
             output_df = pd.concat([output_df, unmasked_row.to_frame().T])

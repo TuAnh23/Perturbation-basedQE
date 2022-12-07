@@ -47,6 +47,7 @@ python -u generate_input_SRC.py \
   --replacement_strategy ${replacement_strategy} \
   --number_of_replacement ${number_of_replacement} \
   --premasked_groupped_by_word ${premasked_groupped_by_word} \
+  --src_lang ${SRC_LANG} \
   |& tee -a ${output_dir}/generate_input_SRC.log
 
 if [ "$qe_wmt22" = "True" ]; then
@@ -54,6 +55,7 @@ if [ "$qe_wmt22" = "True" ]; then
   # Instructions: https://github.com/facebookresearch/mlqe/blob/main/nmt_models/README-translate.md
   # Define vars
   INPUT=${output_dir}/input
+  OUTPUT=${output_dir}/trans_sentences.txt
   BPE_ROOT=/home/tdinh/miniconda3/envs/KIT_start/lib/python3.9/site-packages/subword_nmt
   BPE=models/${SRC_LANG}-${TGT_LANG}/bpecodes
   MODEL_DIR=models/${SRC_LANG}-${TGT_LANG}
@@ -67,12 +69,10 @@ if [ "$qe_wmt22" = "True" ]; then
     --tgt_lang ${TGT_LANG} \
     --tmp_dir ${TMP}
   # Tokenize data
-  python -u QE_WMT22_format_utils.py \
-    --func "tokenize" \
-    --output_dir ${output_dir} \
-    --src_lang ${SRC_LANG} \
-    --tgt_lang ${TGT_LANG} \
-    --tmp_dir ${TMP}
+  for LANG in $SRC_LANG $TGT_LANG; do
+    sacremoses -l $LANG tokenize -a < $INPUT.$LANG > $TMP/preprocessed.tok.$LANG
+    python $BPE_ROOT/apply_bpe.py -c ${BPE} < $TMP/preprocessed.tok.$LANG > $TMP/preprocessed.tok.bpe.$LANG
+  done
   # Apply bpe
   for LANG in $SRC_LANG $TGT_LANG; do
     python $BPE_ROOT/apply_bpe.py -c ${BPE} < $TMP/preprocessed.tok.$LANG > $TMP/preprocessed.tok.bpe.$LANG
@@ -83,13 +83,7 @@ if [ "$qe_wmt22" = "True" ]; then
   fairseq-generate $TMP/bin --path ${MODEL_DIR}/${SRC_LANG}-${TGT_LANG}.pt --beam 5 --source-lang $SRC_LANG --target-lang $TGT_LANG --no-progress-bar --unkpen 5 > $TMP/fairseq.out
   grep ^H $TMP/fairseq.out | cut -d- -f2- | sort -n | cut -f3- > $TMP/mt.out
   # Post-process
-  sed -r 's/(@@ )| (@@ ?$)//g' < $TMP/mt.out > $TMP/mt_filtered.out
-  python -u QE_WMT22_format_utils.py \
-    --func "detokenize" \
-    --output_dir ${output_dir} \
-    --src_lang ${SRC_LANG} \
-    --tgt_lang ${TGT_LANG} \
-    --tmp_dir ${TMP}
+  sed -r 's/(@@ )| (@@ ?$)//g' < $TMP/mt.out | sacremoses -l $TGT_LANG detokenize > $OUTPUT
   # Put the translation to the dataframe
   python -u QE_WMT22_format_utils.py \
     --func "format_translation_file" \
