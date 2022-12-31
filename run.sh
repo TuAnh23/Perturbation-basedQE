@@ -4,55 +4,96 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=4
+export CUDA_VISIBLE_DEVICES=0
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
 nvidia-smi
 
-dataname="masked_content_WMT22_MQM"
-qe_wmt22="True"
+dataname="covost2_all"
+qe_wmt21="False"
 SRC_LANG="en"
-TGT_LANG="de"
+TGT_LANG="vi"
+mask_type="MultiplePerSentence_country"
+dev=False
+grouped_mask=False
 trans_direction="${SRC_LANG}2${TGT_LANG}"
-premasked_groupped_by_word="False"
 data_root_dir="data"
-batch_size=200
+batch_size=100
 seed=0
 replacement_strategy="masking_language_model"
 number_of_replacement=30
-
-#declare -a perturbation_types=("noun" "verb" "adjective" "adverb" "pronoun" )
-
-#for beam in {5..1}; do
-#  for perturbation_type in ${perturbation_types[@]}; do
-#    timestamp=$(date +"%d-%m-%y-%T")
-#    output_dir=output/${dataname}_${trans_direction}/${replacement_strategy}/beam${beam}_perturb${perturbation_type}/${number_of_replacement}replacements/seed${seed}
-#    mkdir -p ${output_dir}
-#    python -u generate_input_SRC.py ...
-#    python -u translate.py ...
-#  done
-#done
-
 beam=5
-declare -a perturbation_types=("None" "content" )
 
-for perturbation_type in ${perturbation_types[@]}; do
-  output_dir=output/${dataname}_${trans_direction}/${replacement_strategy}/beam${beam}_perturb${perturbation_type}/${number_of_replacement}replacements/seed${seed}
-  mkdir -p ${output_dir}
-  python -u generate_input_SRC.py \
+
+if [[ $mask_type == *"occupation"* ]]; then
+  # Data from https://www.enchantedlearning.com/wordlist/jobs.shtml
+  masked_vocab_path=${data_root_dir}/JobTitles.txt
+elif [[ $mask_type == *"country"* ]]; then
+  # Data from https://www.kaggle.com/datasets/alexeyblinnikov/country-adjective-pairs
+  python -u process_vocab_data.py \
     --data_root_dir ${data_root_dir} \
-    --dataname ${dataname} \
-    --perturbation_type ${perturbation_type} \
-    --output_dir ${output_dir} \
-    --seed ${seed} \
-    --replacement_strategy ${replacement_strategy} \
-    --number_of_replacement ${number_of_replacement} \
-    --premasked_groupped_by_word ${premasked_groupped_by_word} \
-    --src_lang ${SRC_LANG} \
-    |& tee -a ${output_dir}/generate_input_SRC.log
+    --dataname "Country_Adjective"
+  masked_vocab_path=${data_root_dir}/Country_Adjective_vocab.txt
+else
+  masked_vocab_path="None"
+fi
 
-  if [ "$qe_wmt22" = "True" ]; then
+OUTPUT_dir=output/${dataname}_${trans_direction}
+TMP_dir=/export/data1/tdinh/${dataname}_${trans_direction}
+output_dir_original_SRC=${OUTPUT_dir}/original
+output_dir_perturbed_SRC=${OUTPUT_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/seed${seed}
+TMP_dir_original_SRC=${TMP_dir}/original
+TMP_dir_perturbed_SRC=${TMP_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/seed${seed}
+mkdir -p ${output_dir_original_SRC}
+mkdir -p ${output_dir_perturbed_SRC}
+mkdir -p ${TMP_dir_original_SRC}
+mkdir -p ${TMP_dir_perturbed_SRC}
+
+# Process the data
+python -u process_src_data.py \
+  --data_root_dir ${data_root_dir} \
+  --src_lang ${SRC_LANG} \
+  --tgt_lang ${TGT_LANG} \
+  --dataname ${dataname} \
+  --seed ${seed} \
+  --output_dir ${output_dir_original_SRC} \
+  --dev ${dev}
+
+# Mask the data
+python -u mask_src_data.py \
+  --original_src_path ${output_dir_original_SRC}/src_df.csv \
+  --src_lang ${SRC_LANG} \
+  --mask_type ${mask_type} \
+  --seed ${seed} \
+  --output_dir ${output_dir_perturbed_SRC} \
+  --masked_vocab_path ${masked_vocab_path}
+
+# Unmask the data to generate perturbed sentences
+python -u unmask.py \
+  --masked_src_path ${output_dir_perturbed_SRC}/masked_df.csv \
+  --src_lang ${SRC_LANG} \
+  --seed ${seed} \
+  --output_dir ${output_dir_perturbed_SRC} \
+  --replacement_strategy ${replacement_strategy} \
+  --number_of_replacement ${number_of_replacement} \
+  --grouped_mask ${grouped_mask}
+
+# Translate original and perturbed sentences
+declare -a columns_to_be_translated=("SRC" "SRC_perturbed" )
+
+for column_to_be_translated in ${columns_to_be_translated[@]}; do
+  if [ "$column_to_be_translated" = "SRC" ]; then
+    output_dir=${output_dir_original_SRC}
+    TMP=${TMP_dir_original_SRC}
+    input_src_path=${output_dir_original_SRC}/src_df.csv
+  else
+    output_dir=${output_dir_perturbed_SRC}
+    TMP=${TMP_dir_perturbed_SRC}
+    input_src_path=${output_dir_perturbed_SRC}/unmasked_df.csv
+  fi
+
+  if [ "$qe_wmt21" = "True" ]; then
     # Use the same NMT model as the ones used to create the QE dataset to translate
     # Instructions: https://github.com/facebookresearch/mlqe/blob/main/nmt_models/README-translate.md
     # Define vars
@@ -61,12 +102,12 @@ for perturbation_type in ${perturbation_types[@]}; do
     BPE_ROOT=/home/tdinh/miniconda3/envs/KIT_start/lib/python3.9/site-packages/subword_nmt
     BPE=models/${SRC_LANG}-${TGT_LANG}/bpecodes
     MODEL_DIR=models/${SRC_LANG}-${TGT_LANG}
-    TMP=/export/data1/tdinh
     # Preprocess input data
-    python -u QE_WMT22_format_utils.py \
+    python -u QE_WMT21_format_utils.py \
       --func "format_input" \
+      --input_src_path ${input_src_path} \
       --output_dir ${output_dir} \
-      --SRC_perturbed_type ${perturbation_type} \
+      --column_to_be_formatted ${column_to_be_translated} \
       --src_lang ${SRC_LANG} \
       --tgt_lang ${TGT_LANG} \
       --tmp_dir ${TMP}
@@ -87,21 +128,23 @@ for perturbation_type in ${perturbation_types[@]}; do
     # Post-process
     sed -r 's/(@@ )| (@@ ?$)//g' < $TMP/mt.out | sacremoses -l $TGT_LANG detokenize > $OUTPUT
     # Put the translation to the dataframe
-    python -u QE_WMT22_format_utils.py \
+    python -u QE_WMT21_format_utils.py \
       --func "format_translation_file" \
+      --input_src_path ${input_src_path} \
       --output_dir ${output_dir} \
-      --SRC_perturbed_type ${perturbation_type} \
+      --column_to_be_formatted ${column_to_be_translated} \
       --src_lang ${SRC_LANG} \
       --tgt_lang ${TGT_LANG} \
       --tmp_dir ${TMP}
   else
     python -u translate.py \
+      --input_path ${input_src_path} \
       --output_dir ${output_dir} \
       --beam ${beam} \
       --seed ${seed} \
       --batch_size ${batch_size} \
       --trans_direction ${trans_direction} \
-      --SRC_perturbed_type ${perturbation_type} \
+      --column_to_be_translated ${column_to_be_translated} \
       |& tee -a ${output_dir}/translate.log
   fi
 done

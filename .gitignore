@@ -13,3 +13,7 @@ output/*
 
 *.pkl
 *.png
+
+notebooks/tmp_storages/*
+
+.tmp.driveupload/*
