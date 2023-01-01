@@ -42,9 +42,9 @@ fi
 OUTPUT_dir=output/${dataname}_${trans_direction}
 TMP_dir=/export/data1/tdinh/${dataname}_${trans_direction}
 output_dir_original_SRC=${OUTPUT_dir}/original
-output_dir_perturbed_SRC=${OUTPUT_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/seed${seed}
+output_dir_perturbed_SRC=${OUTPUT_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/${number_of_replacement}replacements/seed${seed}
 TMP_dir_original_SRC=${TMP_dir}/original
-TMP_dir_perturbed_SRC=${TMP_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/seed${seed}
+TMP_dir_perturbed_SRC=${TMP_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/${number_of_replacement}replacements/seed${seed}
 mkdir -p ${output_dir_original_SRC}
 mkdir -p ${output_dir_perturbed_SRC}
 mkdir -p ${TMP_dir_original_SRC}
@@ -80,10 +80,10 @@ python -u unmask.py \
   --grouped_mask ${grouped_mask}
 
 # Translate original and perturbed sentences
-declare -a columns_to_be_translated=("SRC" "SRC_perturbed" )
+declare -a input_SRC_columns=("SRC" "SRC_perturbed" )
 
-for column_to_be_translated in ${columns_to_be_translated[@]}; do
-  if [ "$column_to_be_translated" = "SRC" ]; then
+for input_SRC_column in ${input_SRC_columns[@]}; do
+  if [ "$input_SRC_column" = "SRC" ]; then
     output_dir=${output_dir_original_SRC}
     TMP=${TMP_dir_original_SRC}
     input_src_path=${output_dir_original_SRC}/src_df.csv
@@ -107,7 +107,7 @@ for column_to_be_translated in ${columns_to_be_translated[@]}; do
       --func "format_input" \
       --input_src_path ${input_src_path} \
       --output_dir ${output_dir} \
-      --column_to_be_formatted ${column_to_be_translated} \
+      --input_SRC_column ${input_SRC_column} \
       --src_lang ${SRC_LANG} \
       --tgt_lang ${TGT_LANG} \
       --tmp_dir ${TMP}
@@ -132,7 +132,7 @@ for column_to_be_translated in ${columns_to_be_translated[@]}; do
       --func "format_translation_file" \
       --input_src_path ${input_src_path} \
       --output_dir ${output_dir} \
-      --column_to_be_formatted ${column_to_be_translated} \
+      --input_SRC_column ${input_SRC_column} \
       --src_lang ${SRC_LANG} \
       --tgt_lang ${TGT_LANG} \
       --tmp_dir ${TMP}
@@ -144,7 +144,7 @@ for column_to_be_translated in ${columns_to_be_translated[@]}; do
       --seed ${seed} \
       --batch_size ${batch_size} \
       --trans_direction ${trans_direction} \
-      --column_to_be_translated ${column_to_be_translated} \
+      --input_SRC_column ${input_SRC_column} \
       |& tee -a ${output_dir}/translate.log
   fi
 done

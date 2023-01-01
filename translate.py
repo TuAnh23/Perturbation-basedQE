@@ -37,7 +37,7 @@ def main():
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--batch_size', type=int, default=5)
     parser.add_argument('--output_dir', type=str)
-    parser.add_argument('--column_to_be_translated', type=str, help="['SRC'|'SRC_perturbed']")
+    parser.add_argument('--input_SRC_column', type=str, help="['SRC'|'SRC_perturbed']")
     args = parser.parse_args()
     print(args)
 
@@ -80,16 +80,16 @@ def main():
     src_tgt_df = pd.read_csv(args.input_path, index_col=0)
 
     LOGGER.info("Translating ...")
-    src_tgt_df[f"{args.column_to_be_translated}-Trans"] = batch_translation(
+    src_tgt_df[f"{args.input_SRC_column}-Trans"] = batch_translation(
         model=src2tgt_model,
         tokenizer=tokenizer,
-        src_sentences=src_tgt_df[args.column_to_be_translated].tolist(),
+        src_sentences=src_tgt_df[args.input_SRC_column].tolist(),
         beam=args.beam, batch_size=args.batch_size,
         device=device, model_type=src2tgt_model_type
     )
 
     LOGGER.info("Saving output")
-    src_tgt_df.to_csv(f"{args.output_dir}/{args.column_to_be_translated}-translations.csv")
+    src_tgt_df.to_csv(f"{args.output_dir}/translations.csv")
 
 
 def translate_single_batch_huggingface(model, tokenizer, src_sentences: list, beam: int, device) -> list:
