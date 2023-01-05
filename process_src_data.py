@@ -121,9 +121,17 @@ def main():
         # Reindex after filtering the data
         src_df.reset_index(drop=True, inplace=True)
 
-    elif args.dataname == 'WMT21_DA':
+    elif args.dataname == 'WMT21_DA_test':
         assert args.src_lang == 'en'
-        with open(f"{args.data_root_dir}/wmt-qe-2021-data/en-de-test21/test21.src") as f:
+        with open(f"{args.data_root_dir}/wmt-qe-2021-data/{args.src_lang}-{args.tgt_lang}-test21/test21.src") as f:
+            en_sentences = f.readlines()
+            en_sentences = [line.rstrip() for line in en_sentences]
+
+        src_df = pd.DataFrame(data={'SRC': en_sentences})
+
+    elif args.dataname == 'WMT21_DA_dev':
+        assert args.src_lang == 'en'
+        with open(f"{args.data_root_dir}/wmt-qe-2021-data/{args.src_lang}-{args.tgt_lang}-dev/dev.src") as f:
             en_sentences = f.readlines()
             en_sentences = [line.rstrip() for line in en_sentences]
 
