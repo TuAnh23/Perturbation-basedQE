@@ -10,17 +10,13 @@ export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
 nvidia-smi
 
-dataname="WMT21_DA_test"
+dataname="WMT21_DA_dev"
 SRC_LANG="en"
 TGT_LANG="de"
 sentence_level_eval_da="False"
 
 trans_word_level_eval="True"
-trans_word_level_eval_method="nr_effecting_src_words"  # "nmt_log_prob"
-nmt_log_prob_threshold=0.5
 src_word_level_eval="True"
-src_word_level_eval_method="nr_effecting_src_words"  # "nmt_log_prob"
-effecting_words_threshold=2
 mask_type="MultiplePerSentence_content"
 use_src_tgt_alignment="True"
 
@@ -44,7 +40,7 @@ if [ "$use_src_tgt_alignment" = "True" ]; then
   # First generate the reformatted src-trans files to be used by awesome-align
   python -u src_tgt_alignment.py \
     --df_root_path ${df_root_path} \
-    --data_root_path ${data_root_path} \
+    --data_root_path ${data_root_dir} \
     --src_lang ${SRC_LANG} \
     --tgt_lang ${TGT_LANG} \
     --replacement_strategy ${replacement_strategy} \
@@ -82,7 +78,7 @@ fi
 
 python -u read_and_analyse_df.py \
   --df_root_path ${df_root_path} \
-  --data_root_path ${data_root_path} \
+  --data_root_path ${data_root_dir} \
   --src_lang ${SRC_LANG} \
   --tgt_lang ${TGT_LANG} \
   --replacement_strategy ${replacement_strategy} \
@@ -104,10 +100,10 @@ python -u quality_estimation.py \
   --tgt_lang ${TGT_LANG} \
   --sentence_level_eval_da ${sentence_level_eval_da} \
   --trans_word_level_eval ${trans_word_level_eval} \
-  --trans_word_level_eval_method ${trans_word_level_eval_method} \
-  --nmt_log_prob_threshold ${nmt_log_prob_threshold} \
+  --trans_word_level_eval_methods 'nmt_log_prob' 'nr_effecting_src_words' \
+  --nmt_log_prob_thresholds 0.4, 0.5, 0.6 \
   --src_word_level_eval ${src_word_level_eval} \
-  --src_word_level_eval_method ${src_word_level_eval_method} \
-  --effecting_words_threshold ${effecting_words_threshold} \
+  --src_word_level_eval_methods 'nmt_log_prob' 'nr_effecting_src_words' \
+  --effecting_words_thresholds 1 2 3 4 \
   |& tee -a ${analyse_output_path}/quality_estimation.log
 

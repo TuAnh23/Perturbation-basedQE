@@ -6,6 +6,7 @@ from utils import str_to_bool
 from align_and_analyse_ambiguous_trans import analyse_single_sentence
 from scipy.stats import zscore
 from scipy.stats import pearsonr, spearmanr
+from collections import defaultdict
 
 
 def load_gold_labels(dataset, data_root_path, src_lang, tgt_lang, task):
@@ -90,7 +91,8 @@ def mnt_log_prob_eval(dataset, data_root_path, src_lang, tgt_lang, nmt_log_prob_
     word_log_probs = get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang)
     threshold = np.log(nmt_log_prob_threshold)
     if task == 'trans_word_level_eval':
-        pred_labels = [['BAD' if x < threshold else 'OK' for x in y] for y in word_log_probs]
+        pred_labels = [['unknown' if np.isnan(x) else 'BAD' if x < threshold else 'OK' for x in y]
+                       for y in word_log_probs]
     elif task == 'src_word_level_eval':
         # Have to first align src-trans
         perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
@@ -150,64 +152,64 @@ def get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang):
     if dataset == 'WMT21_DA_test':
         subwords_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/word-probas/mt.test21.{src_lang}{tgt_lang}"
         subword_log_probs_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/word-probas/word_probas.test21.{src_lang}{tgt_lang}"
-
-        with open(subwords_path, 'r') as f:
-            subwords = f.readlines()
-            subwords = [line.replace('\n', '').split() for line in subwords]
-
-        with open(subword_log_probs_path, 'r') as f:
-            subword_log_probs = f.readlines()
-            subword_log_probs = [line.replace('\n', '').split() for line in subword_log_probs]
-            # Cast all values to float
-            subword_log_probs = [[float(x) for x in y] for y in subword_log_probs]
-
-        word_log_probs = merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs)
-        # Some manual fixes (sometimes a dot is a token, sometimes it's a part of a token)
-
-        # Capt. --> Capt .
-        word_log_probs[122][25] = word_log_probs[122][25] / 2
-        word_log_probs[122].append(word_log_probs[122][25])
-
-        # 115 . --> 115.
-        word_log_probs[214][12] = word_log_probs[214][12] + word_log_probs[214][13]
-        word_log_probs[214].pop(13)
-
-        # R.O.N.A. --> R.O.N.A .
-        word_log_probs[306][14] = word_log_probs[306][14] / 2
-        word_log_probs[306].append(word_log_probs[306][14])
-
-        # 308. --> 308 .
-        word_log_probs[379][7] = word_log_probs[379][7] / 2
-        word_log_probs[379].insert(8, word_log_probs[379][7])
-
-        # I. --> I .
-        word_log_probs[908][16] = word_log_probs[908][16] / 2
-        word_log_probs[908].append(word_log_probs[908][16])
-
-        return word_log_probs
+        tokenized_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/test21.tok.mt"
+    elif dataset == 'WMT21_DA_dev':
+        subwords_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/direct-assessments/{src_lang}-{tgt_lang}-dev/word-probas/mt.dev.{src_lang}{tgt_lang}"
+        subword_log_probs_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/direct-assessments/{src_lang}-{tgt_lang}-dev/word-probas/word_probas.dev.{src_lang}{tgt_lang}"
+        tokenized_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/{src_lang}-{tgt_lang}-dev/dev.mt"
     else:
         raise RuntimeError(f"get_nmt_word_log_probs not available for dataset {dataset}")
 
+    with open(subwords_path, 'r') as f:
+        subwords = f.readlines()
+        subwords = [line.replace('\n', '').split() for line in subwords]
 
-def merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs):
+    with open(subword_log_probs_path, 'r') as f:
+        subword_log_probs = f.readlines()
+        subword_log_probs = [line.replace('\n', '').split() for line in subword_log_probs]
+        # Cast all values to float
+        subword_log_probs = [[float(x) for x in y] for y in subword_log_probs]
+
+    with open(tokenized_path, 'r') as f:
+        tokenized_translations = f.readlines()
+        tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
+
+    word_log_probs = merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs, tokenized_translations)
+    return word_log_probs
+
+
+def merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs, tokenized_translations):
     """
     Concat subwords wih '@@' and hyphen tokens @-@
     """
+    # Merge the subword_log_probs to word_log_probs
+    # Concat subwords wih '@@' and hyphen tokens @-@
     word_log_probs = []
     for sentence_index in range(len(subwords)):
-        word_log_probs_per_sentence = []
+        word_log_probs_per_sentence = defaultdict(lambda: np.nan)  # word:log_prob
         subword_log_probs_per_sentence = subword_log_probs[sentence_index]
         subwords_per_sentence = subwords[sentence_index]
         current_word_log_prob = 0
+        current_word = ''
         for subword_index in range(len(subwords_per_sentence)):
             current_word_log_prob = current_word_log_prob + subword_log_probs_per_sentence[subword_index]
+            if subwords_per_sentence[subword_index].endswith('@@'):
+                current_word = current_word + subwords_per_sentence[subword_index][:-2]
+            elif subwords_per_sentence[subword_index] == '@-@':
+                current_word = current_word + '-'
+            else:
+                current_word = current_word + subwords_per_sentence[subword_index]
             if (not subwords_per_sentence[subword_index].endswith('@@')) and \
                     (not subwords_per_sentence[subword_index] == '@-@') and \
                     (not (((subword_index + 1) < len(subwords_per_sentence)) and (
                             subwords_per_sentence[subword_index + 1] == '@-@'))):
-                word_log_probs_per_sentence.append(current_word_log_prob)
+                word_log_probs_per_sentence[current_word] = current_word_log_prob
                 current_word_log_prob = 0
-        word_log_probs.append(word_log_probs_per_sentence)
+                current_word = ''
+
+        fixed_word_log_probs_per_sentence = [word_log_probs_per_sentence[word] for word in
+                                             tokenized_translations[sentence_index]]
+        word_log_probs.append(fixed_word_log_probs_per_sentence)
     return word_log_probs
 
 
@@ -228,13 +230,20 @@ def main():
     parser.add_argument('--tgt_lang', type=str)
     parser.add_argument('--sentence_level_eval_da', type=str_to_bool, default=False)
     parser.add_argument('--trans_word_level_eval', type=str_to_bool, default=False)
-    parser.add_argument('--trans_word_level_eval_method', type=str,
-                        choices=['nmt_log_prob', 'nr_effecting_src_words'])
-    parser.add_argument('--nmt_log_prob_threshold', type=float,
-                        help="If nmt log prob of a word < threshold, mark it as BAD")
+    parser.add_argument('--trans_word_level_eval_methods', type=str, nargs="*",
+                        help="Provide options for hyperparams tuning."
+                             "Any non-empty sublist of ['nmt_log_prob', 'nr_effecting_src_words']",
+                        default=['nmt_log_prob', 'nr_effecting_src_words'])
+    parser.add_argument('--nmt_log_prob_thresholds', type=float, nargs="*",
+                        help="If nmt log prob of a word < threshold, mark it as BAD."
+                             "Provide a list of options for hyperparams tuning."
+                             "E.g., [0.4, 0.5, 0.6]",
+                        default=[0.4, 0.5, 0.6])
     parser.add_argument('--src_word_level_eval', type=str_to_bool, default=False)
-    parser.add_argument('--src_word_level_eval_method', type=str,
-                        choices=['nmt_log_prob', 'nr_effecting_src_words'])
+    parser.add_argument('--src_word_level_eval_methods', type=str, nargs="*",
+                        help="Provide options for hyperparams tuning."
+                             "Any non-empty sublist of ['nmt_log_prob', 'nr_effecting_src_words']",
+                        default=['nmt_log_prob', 'nr_effecting_src_words'])
     parser.add_argument('--sentence_level_eval_da_method', type=str,
                         choices=[
                             'trans_edit_distance',  # avg edit distance of the perturbed trans' vs original trans
@@ -243,44 +252,80 @@ def main():
                             'change_spread/sentence_length',  # same as above but normalize by length
                             'word_level_agg',  # aggreate word_level eval (count)
                         ])
-    parser.add_argument('--effecting_words_threshold', type=int,
+    parser.add_argument('--effecting_words_thresholds', type=int, nargs="*",
                         help="For a word, if the number of SRC words in the sentence effecting its translation"
-                             "is > threshold, that word is marked as BAD")
+                             "is > threshold, that word is marked as BAD"
+                             "Provide a list of options for hyperparams tuning."
+                             "E.g., [1, 2, 3, 4]",
+                        default=[1, 2, 3, 4])
 
     args = parser.parse_args()
     print(args)
 
     if args.trans_word_level_eval:
         task = 'trans_word_level_eval'
-        gold_labels = load_gold_labels(args.dataset, args.data_root_path, args.src_lang, args.tgt_lang,
-                                       task=task)
-        if args.trans_word_level_eval_method == 'nmt_log_prob':
-            pred_labels = mnt_log_prob_eval(args.dataset, args.data_root_path, args.src_lang,
-                                            args.tgt_lang, args.nmt_log_prob_threshold,
-                                            args.perturbed_trans_df_path, task=task)
-        elif args.trans_word_level_eval_method == 'nr_effecting_src_words':
-            pred_labels = nr_effecting_src_words_eval(args.perturbed_trans_df_path, args.effecting_words_threshold,
-                                                      task=task)
-        else:
-            raise RuntimeError(f"Method {args.trans_word_level_eval_method} not available for task {task}.")
-
-        print(matthews_corrcoef(y_true=flatten_list(gold_labels), y_pred=flatten_list(pred_labels)))
+        print("---------------------------------------")
+        print(f"Hyperparams tuning for task {task}")
+        max_score = 0
+        for trans_word_level_eval_method in args.trans_word_level_eval_methods:
+            print(f"\tMethod: {trans_word_level_eval_method}")
+            if trans_word_level_eval_method == 'nmt_log_prob':
+                for nmt_log_prob_threshold in args.nmt_log_prob_thresholds:
+                    matthews_corrcoef_score = word_level_eval(task, args.dataset, args.data_root_path, args.src_lang, args.tgt_lang,
+                                                              args.perturbed_trans_df_path,
+                                                              word_level_eval_method=trans_word_level_eval_method,
+                                                              nmt_log_prob_threshold=nmt_log_prob_threshold)
+                    print(f"\t\tnmt_log_prob_thresholds: {nmt_log_prob_threshold}")
+                    print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
+                    if matthews_corrcoef_score >= max_score:
+                        print("\t\t\tCurrent best")
+            elif trans_word_level_eval_method == 'nr_effecting_src_words':
+                for effecting_words_threshold in args.effecting_words_thresholds:
+                    matthews_corrcoef_score = word_level_eval(task, args.dataset, args.data_root_path, args.src_lang,
+                                                              args.tgt_lang,
+                                                              args.perturbed_trans_df_path,
+                                                              word_level_eval_method=trans_word_level_eval_method,
+                                                              effecting_words_threshold=effecting_words_threshold)
+                    print(f"\t\teffecting_words_threshold: {effecting_words_threshold}")
+                    print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
+                    if matthews_corrcoef_score >= max_score:
+                        max_score = matthews_corrcoef_score
+                        print("\t\t\tCurrent best")
+            else:
+                raise RuntimeError(f"Unknown method {trans_word_level_eval_method} for task {task}")
 
     if args.src_word_level_eval:
         task = 'src_word_level_eval'
-        gold_labels = load_gold_labels(args.dataset, args.data_root_path, args.src_lang, args.tgt_lang,
-                                       task=task)
-        if args.trans_word_level_eval_method == 'nmt_log_prob':
-            pred_labels = mnt_log_prob_eval(args.dataset, args.data_root_path, args.src_lang,
-                                            args.tgt_lang, args.nmt_log_prob_threshold,
-                                            args.perturbed_trans_df_path, task=task)
-        elif args.trans_word_level_eval_method == 'nr_effecting_src_words':
-            pred_labels = nr_effecting_src_words_eval(args.perturbed_trans_df_path, args.effecting_words_threshold,
-                                                      task=task)
-        else:
-            raise RuntimeError(f"Method {args.trans_word_level_eval_method} not available for task {task}.")
-
-        print(matthews_corrcoef(y_true=flatten_list(gold_labels), y_pred=flatten_list(pred_labels)))
+        print("---------------------------------------")
+        print(f"Hyperparams tuning for task {task}")
+        max_score = 0
+        for src_word_level_eval_method in args.src_word_level_eval_methods:
+            print(f"\tMethod: {src_word_level_eval_method}")
+            if src_word_level_eval_method == 'nmt_log_prob':
+                for nmt_log_prob_threshold in args.nmt_log_prob_thresholds:
+                    matthews_corrcoef_score = word_level_eval(task, args.dataset, args.data_root_path, args.src_lang,
+                                                              args.tgt_lang,
+                                                              args.perturbed_trans_df_path,
+                                                              word_level_eval_method=src_word_level_eval_method,
+                                                              nmt_log_prob_threshold=nmt_log_prob_threshold)
+                    print(f"\t\tnmt_log_prob_thresholds: {nmt_log_prob_threshold}")
+                    print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
+                    if matthews_corrcoef_score >= max_score:
+                        print("\t\t\tCurrent best")
+            elif src_word_level_eval_method == 'nr_effecting_src_words':
+                for effecting_words_threshold in args.effecting_words_thresholds:
+                    matthews_corrcoef_score = word_level_eval(task, args.dataset, args.data_root_path, args.src_lang,
+                                                              args.tgt_lang,
+                                                              args.perturbed_trans_df_path,
+                                                              word_level_eval_method=src_word_level_eval_method,
+                                                              effecting_words_threshold=effecting_words_threshold)
+                    print(f"\t\teffecting_words_threshold: {effecting_words_threshold}")
+                    print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
+                    if matthews_corrcoef_score >= max_score:
+                        max_score = matthews_corrcoef_score
+                        print("\t\t\tCurrent best")
+            else:
+                raise RuntimeError(f"Unknown method {src_word_level_eval_method} for task {task}")
 
     if args.sentence_level_eval_da:
         perturbed_trans_df = pd.read_pickle(args.perturbed_trans_df_path)
@@ -311,6 +356,23 @@ def main():
                     approximations[col].values
                 )
             )
+
+
+def word_level_eval(task, dataset, data_root_path, src_lang, tgt_lang, perturbed_trans_df_path, word_level_eval_method,
+                    nmt_log_prob_threshold=0.5, effecting_words_threshold=2):
+    gold_labels = load_gold_labels(dataset, data_root_path, src_lang, tgt_lang,
+                                   task=task)
+    if word_level_eval_method == 'nmt_log_prob':
+        pred_labels = mnt_log_prob_eval(dataset, data_root_path, src_lang,
+                                        tgt_lang, nmt_log_prob_threshold,
+                                        perturbed_trans_df_path, task=task)
+    elif word_level_eval_method == 'nr_effecting_src_words':
+        pred_labels = nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_threshold,
+                                                  task=task)
+    else:
+        raise RuntimeError(f"Method {word_level_eval_method} not available for task {task}.")
+
+    return matthews_corrcoef(y_true=flatten_list(gold_labels), y_pred=flatten_list(pred_labels))
 
 
 if __name__ == "__main__":
