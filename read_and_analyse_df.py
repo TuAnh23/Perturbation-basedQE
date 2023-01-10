@@ -330,7 +330,7 @@ def fix_tokenization(tokenized_sentence):
         return tokenized_sentence
 
 
-def read_output_df(df_root_path, dataset, src_lang, tgt_lang, mask_type, beam, replacement_strategy,
+def read_output_df(df_root_path, data_root_path, dataset, src_lang, tgt_lang, mask_type, beam, replacement_strategy,
                    ignore_case=False, no_of_replacements=1, seed=0, ref_available=False,
                    tokenize_sentences=False, reformat_for_src_tgt_alignment=False,
                    analyse_feature=[], chunk_max_length=1,
@@ -374,12 +374,34 @@ def read_output_df(df_root_path, dataset, src_lang, tgt_lang, mask_type, beam, r
         print("Tokenize everything ...")
         if not winoMT:
             # Tokenizing the original src-trans
-            original_trans['tokenized_SRC-Trans'] = original_trans['SRC-Trans'].apply(
-                lambda x: tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
-            )
-            original_trans['tokenized_SRC'] = original_trans['SRC'].apply(
-                lambda x: src_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
-            )
+            # For WMT21 QE data, use the provided tokens from the data for original SRC and trans
+            # and use sacremoses to tokenize the perturbed SRC and trans
+            if dataset.startswith("WMT21_DA"):
+                # Load the tokens from data
+                if dataset.startswith("WMT21_DA_test"):
+                    tokenized_src_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/test21.tok.src"
+                    tokenized_trans_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/test21.tok.mt"
+                elif dataset.startswith("WMT21_DA_dev"):
+                    tokenized_src_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/{src_lang}-{tgt_lang}-dev/dev.src"
+                    tokenized_trans_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/{src_lang}-{tgt_lang}-dev/dev.mt"
+                else:
+                    raise RuntimeError
+                with open(tokenized_src_file, 'r') as f:
+                    tokenized_srcs = f.readlines()
+                    tokenized_srcs = [tokenized_src.strip().split() for tokenized_src in tokenized_srcs]
+                with open(tokenized_trans_file, 'r') as f:
+                    tokenized_translations = f.readlines()
+                    tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
+                # Put tokens to the df
+                original_trans['tokenized_SRC-Trans'] = tokenized_translations
+                original_trans['tokenized_SRC'] = tokenized_srcs
+            else:
+                original_trans['tokenized_SRC-Trans'] = original_trans['SRC-Trans'].apply(
+                    lambda x: tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
+                )
+                original_trans['tokenized_SRC'] = original_trans['SRC'].apply(
+                    lambda x: src_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
+                )
         # Tokenizing the perturbed src-trans
         output_df['tokenized_SRC_perturbed'] = output_df['SRC_perturbed'].apply(
             lambda x: tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
@@ -391,41 +413,6 @@ def read_output_df(df_root_path, dataset, src_lang, tgt_lang, mask_type, beam, r
         if 'REF' in output_df.columns:
             output_df['tokenized_REF'] = output_df['REF'].apply(
                 lambda x: tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
-            )
-
-        # Fix tokenization in some cases
-        if dataset == "WMT21_DA_test_en2de":
-            # Fix tokenization
-            original_trans_errornous_idxs = [80, 86, 109, 122, 143, 285, 306, 314, 427, 430, 528, 560, 760, 884,
-                                             908, 924, 940]
-            original_src_errornous_idxs = [17, 122, 306, 817, 908, 940]
-
-            original_trans['tokenized_SRC-Trans'] = original_trans.apply(
-                lambda x: fix_tokenization(
-                    x['tokenized_SRC-Trans']
-                ) if x['SRC_original_idx'] in original_trans_errornous_idxs else x['tokenized_SRC-Trans'],
-                axis=1
-            )
-
-            output_df['tokenized_SRC_perturbed-Trans'] = output_df.apply(
-                lambda x: fix_tokenization(
-                    x['tokenized_SRC_perturbed-Trans']
-                ) if x['SRC_original_idx'] in original_trans_errornous_idxs else x['tokenized_SRC_perturbed-Trans'],
-                axis=1
-            )
-
-            original_trans['tokenized_SRC'] = original_trans.apply(
-                lambda x: fix_tokenization(
-                    x['tokenized_SRC']
-                ) if x['SRC_original_idx'] in original_src_errornous_idxs else x['tokenized_SRC'],
-                axis=1
-            )
-
-            output_df['tokenized_SRC_perturbed'] = output_df.apply(
-                lambda x: fix_tokenization(
-                    x['tokenized_SRC_perturbed']
-                ) if x['SRC_original_idx'] in original_src_errornous_idxs else x['tokenized_SRC_perturbed'],
-                axis=1
             )
 
     if reformat_for_src_tgt_alignment and not winoMT:
@@ -580,6 +567,7 @@ def read_output_df(df_root_path, dataset, src_lang, tgt_lang, mask_type, beam, r
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--df_root_path', type=str)
+    parser.add_argument('--data_root_path', type=str, default='data')
     parser.add_argument('--src_lang', type=str, default="en")
     parser.add_argument('--tgt_lang', type=str, default="de")
     parser.add_argument('--replacement_strategy', type=str, default='word2vec_similarity',
@@ -609,7 +597,8 @@ def main():
         args.mask_type = 'pronoun'
         args.number_of_replacement = 1
 
-    output = read_output_df(df_root_path=args.df_root_path, dataset=f"{args.dataname}_{args.src_lang}2{args.tgt_lang}",
+    output = read_output_df(df_root_path=args.df_root_path, data_root_path=args.data_root_path,
+                            dataset=f"{args.dataname}_{args.src_lang}2{args.tgt_lang}",
                             src_lang=args.src_lang, tgt_lang=args.tgt_lang, mask_type=args.mask_type,
                             beam=args.beam, replacement_strategy=args.replacement_strategy, ignore_case=False,
                             no_of_replacements=args.number_of_replacement, seed=args.seed,

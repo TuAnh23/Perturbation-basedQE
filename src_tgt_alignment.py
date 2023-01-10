@@ -13,6 +13,7 @@ from read_and_analyse_df import read_output_df
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--df_root_path', type=str)
+    parser.add_argument('--data_root_path', type=str, default='data')
     parser.add_argument('--src_lang', type=str, default="en")
     parser.add_argument('--tgt_lang', type=str, default="de")
     parser.add_argument('--replacement_strategy', type=str, default='word2vec_similarity',
@@ -33,7 +34,8 @@ def main():
         args.number_of_replacement = 1
 
     # Output the reformatted src-trans file to be used for awesome align
-    read_output_df(df_root_path=args.df_root_path, dataset=f"{args.dataname}_{args.src_lang}2{args.tgt_lang}",
+    read_output_df(df_root_path=args.df_root_path, data_root_path=args.data_root_path,
+                   dataset=f"{args.dataname}_{args.src_lang}2{args.tgt_lang}",
                    src_lang=args.src_lang, tgt_lang=args.tgt_lang, mask_type=args.mask_type,
                    beam=args.beam, replacement_strategy=args.replacement_strategy, ignore_case=False,
                    no_of_replacements=args.number_of_replacement, winoMT=args.winoMT,
