@@ -86,7 +86,10 @@ def random_single_mask(src_df, masked_word_type, src_lang):
     masked_data = pd.DataFrame(columns=['SRC_original_idx', 'SRC', 'SRC_masked', 'original_word', 'original_word_tag'])
 
     for src_idx, src_row in src_df.iterrows():
-        tokenized_src = tokenizer.tokenize(src_row['SRC'], escape=False, aggressive_dash_splits=False)
+        if 'tokenized_SRC' in src_df.columns:
+            tokenized_src = src_row['tokenized_SRC'].split()
+        else:
+            tokenized_src = tokenizer.tokenize(src_row['SRC'], escape=False, aggressive_dash_splits=False)
         pos_tags = nltk.pos_tag(tokenized_src)
 
         word_indices_with_masked_word_type = [
@@ -187,7 +190,10 @@ def multiple_per_sentence_mask(src_df, masked_word_type, src_lang, masked_vocab=
     masked_data = pd.DataFrame(columns=['SRC_original_idx', 'SRC', 'SRC_masked', 'original_word', 'original_word_tag'])
 
     for src_idx, src_row in src_df.iterrows():
-        tokenized_src = tokenizer.tokenize(src_row['SRC'], escape=False, aggressive_dash_splits=False)
+        if 'tokenized_SRC' in src_df.columns:
+            tokenized_src = src_row['tokenized_SRC'].split()
+        else:
+            tokenized_src = tokenizer.tokenize(src_row['SRC'], escape=False, aggressive_dash_splits=False)
         pos_tags = nltk.pos_tag(tokenized_src)
         original_words = []
         original_words_tags = []
@@ -223,21 +229,17 @@ def nltk_pos_tag_single_word(word):
     return nltk.pos_tag([word])[0][1]
 
 
-def mask_sentence_given_word(sentence, tokenizer, masked_word):
+def mask_sentence_given_word(sentence, tokenized_sentence, masked_word):
     """
     Mask a word in a sentence (where the word index is not provided)
-        sentence: the original sentence without preprocessing
-        masked_word: the word to be masked (in lowercase)
+        tokenized_sentence: the tokenized original sentence
+        masked_word: the word to be masked
     """
     # Find the location of the word in the sentence
-    lowercased_sentence = sentence.lower()
-    tokenized_sentence = tokenizer.tokenize(
-        lowercased_sentence, escape=False, aggressive_dash_splits=False
-    )
     masked_word_index = None
     prev_index = 0
     for word in tokenized_sentence:
-        word_location = lowercased_sentence.find(word, prev_index)
+        word_location = sentence.find(word, prev_index)
         if word == masked_word:
             masked_word_index = word_location
         else:
@@ -266,17 +268,24 @@ def mask_groupped_by_word(src_df, masked_word_type, src_lang, n_sentences, maske
         assert masked_vocab is not None
 
     # Count words in the dataset
-    corpus = src_df['SRC'].values
-    tokenizer = MosesTokenizer(lang=src_lang)
-    detokenizer = MosesDetokenizer(lang=src_lang)
-    vectorizer = CountVectorizer(
-        tokenizer=lambda x: tokenizer.tokenize(
-            x,
-            escape=False,
-            aggressive_dash_splits=False
-        ),
-        lowercase=True,
-    )
+    if 'tokenized_SRC' in src_df.columns:
+        corpus = src_df['tokenized_SRC'].values
+        vectorizer = CountVectorizer(
+            tokenizer=lambda x: x.split(),
+            lowercase=False,
+        )
+    else:
+        corpus = src_df['SRC'].values
+        tokenizer = MosesTokenizer(lang=src_lang)
+        detokenizer = MosesDetokenizer(lang=src_lang)
+        vectorizer = CountVectorizer(
+            tokenizer=lambda x: tokenizer.tokenize(
+                x,
+                escape=False,
+                aggressive_dash_splits=False
+            ),
+            lowercase=False,
+        )
     count_fit = vectorizer.fit_transform(corpus)
 
     # Only consider the single occurance of a word in a sentence
@@ -293,8 +302,6 @@ def mask_groupped_by_word(src_df, masked_word_type, src_lang, n_sentences, maske
                           lambda x: is_valid_mask(x['word'], x['pos_tag'], masked_word_type, masked_vocab),
                           axis=1
                       )
-
-
 
     masked_data = pd.DataFrame(columns=['SRC_original_idx', 'SRC', 'SRC_masked', 'original_word', 'original_word_tag'])
 
@@ -316,12 +323,23 @@ def mask_groupped_by_word(src_df, masked_word_type, src_lang, n_sentences, maske
         tmp_df['original_word'] = filtered_word_row['word']
         tmp_df['original_word_tag'] = filtered_word_row['pos_tag']
 
+        if 'tokenized_SRC' in src_df.columns:
+            SRC_and_tokenized_SRC = src_df.loc[sentence_indices]['SRC']
+            SRC_and_tokenized_SRC['tokenized_SRC'] = \
+                src_df.loc[sentence_indices, 'tokenized_SRC'].apply(lambda x: x.split())
+        else:
+            SRC_and_tokenized_SRC = src_df.loc[sentence_indices]['SRC']
+            SRC_and_tokenized_SRC['tokenized_SRC'] =\
+                src_df.loc[sentence_indices, 'SRC'].apply(
+                    lambda x: tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
+                )
+
         # Mask the word in those sentences
         tmp_df['SRC_masked'] = \
-            src_df.loc[sentence_indices, 'SRC'].apply(
+            SRC_and_tokenized_SRC.apply(
                 lambda x: mask_sentence_given_word(
-                    sentence=x, masked_word=filtered_word_row['word'], tokenizer=tokenizer,
-                )
+                    sentence=x['SRC'], tokenized_sentence=x['tokenized_SRC'], masked_word=filtered_word_row['word']
+                ), axis=1
             ).values
 
         # Concat to the whole df

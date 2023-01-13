@@ -1,8 +1,11 @@
+import copy
+import itertools
+
 import pandas as pd
 import numpy as np
 from sklearn.metrics import matthews_corrcoef
 import argparse
-from utils import str_to_bool
+from utils import str_to_bool, set_seed
 from align_and_analyse_ambiguous_trans import analyse_single_sentence
 from scipy.stats import zscore
 from scipy.stats import pearsonr, spearmanr
@@ -87,12 +90,12 @@ def flatten_list(list_of_lists):
     return [item for sublist in list_of_lists for item in sublist]
 
 
-def mnt_log_prob_eval(dataset, data_root_path, src_lang, tgt_lang, nmt_log_prob_threshold, perturbed_trans_df_path, task):
+def nmt_log_prob_eval(dataset, data_root_path, src_lang, tgt_lang, nmt_log_prob_threshold, perturbed_trans_df_path,
+                      task, keep_unknown=False):
     word_log_probs = get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang)
     threshold = np.log(nmt_log_prob_threshold)
     if task == 'trans_word_level_eval':
-        pred_labels = [['unknown' if np.isnan(x) else 'BAD' if x < threshold else 'OK' for x in y]
-                       for y in word_log_probs]
+        pred_labels = log_prob_to_label(threshold, word_log_probs)
     elif task == 'src_word_level_eval':
         # Have to first align src-trans
         perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
@@ -111,14 +114,46 @@ def mnt_log_prob_eval(dataset, data_root_path, src_lang, tgt_lang, nmt_log_prob_
             ]
             src_word_log_probs.append(src_word_log_probs_sentence)
 
-        pred_labels = [['unknown' if np.isnan(x) else 'BAD' if x < threshold else 'OK' for x in y]
-                       for y in src_word_log_probs]
+        pred_labels = log_prob_to_label(threshold, src_word_log_probs)
     else:
         raise RuntimeError('Unknown task')
+
+    if not keep_unknown:
+        pred_labels = replace_unknown(pred_labels)
     return pred_labels
 
 
-def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_threshold, task):
+def replace_unknown(pred_labels):
+    """
+    If unknown --> failed word alignemnt --> the word is probably badly translated
+    --> replace unknown with BAD
+    Returns:
+        new_pred_labels
+    """
+    # # Replace unknown predictions with either 'OK' or 'BAD' randomly.
+    # new_pred_labels = copy.deepcopy(pred_labels)
+    # for x in range(0, len(new_pred_labels)):
+    #     for y in range(0, len(new_pred_labels[x])):
+    #         if new_pred_labels[x][y] == 'unknown':
+    #             new_pred_labels[x][y] = np.random.choice(['OK', 'BAD'])
+    new_pred_labels = copy.deepcopy(pred_labels)
+    for x in range(0, len(new_pred_labels)):
+        for y in range(0, len(new_pred_labels[x])):
+            if new_pred_labels[x][y] == 'unknown':
+                new_pred_labels[x][y] = 'BAD'
+    return new_pred_labels
+
+
+def log_prob_to_label(threshold, word_log_probs):
+    return [['unknown' if np.isnan(x) else 'BAD' if x < threshold else 'OK' for x in y]
+            for y in word_log_probs]
+
+
+def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_threshold, task,
+                                consistence_trans_portion_threshold=0.8,
+                                uniques_portion_for_noiseORperturbed_threshold=0.4,
+                                no_effecting_words_portion_threshold=0.8,
+                                keep_unknown=False):
     """
     *_word_level_eval by using nr_effecting_src_words
     Returns:
@@ -138,13 +173,24 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
         sentence_df = perturbed_trans_df[perturbed_trans_df['SRC_original_idx'] == SRC_original_idx]
         original_trans_length = len(sentence_df['tokenized_SRC-Trans'].values[0])
         original_src_length = len(sentence_df['tokenized_SRC'].values[0])
-        tgt_src_effects = analyse_single_sentence(sentence_df,
-                                                  align_type=align_type, return_word_index=True)
+        tgt_src_effects = analyse_single_sentence(
+            sentence_df,
+            align_type=align_type, return_word_index=True,
+            consistence_trans_portion_threshold=consistence_trans_portion_threshold,
+            uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold
+        )
         bad_words = find_bad_word(tgt_src_effects, effecting_words_threshold)
-        sentence_word_tags = ['BAD' if x in bad_words else 'OK'
-                              for x in range(0,
-                                             original_trans_length if task == 'trans_word_level_eval' else original_src_length)]
+        ok_words = find_ok_word(tgt_src_effects,
+                                no_effecting_words_threshold=original_src_length*no_effecting_words_portion_threshold)
+        # sentence_word_tags = ['BAD' if x in bad_words else 'OK' if x in ok_words else 'unknown'
+        #                       for x in range(0,
+        #                                      original_trans_length if task == 'trans_word_level_eval' else original_src_length)]
+        sentence_word_tags = ['OK' if x in ok_words else 'BAD' for x in range(0,
+                              original_trans_length if task == 'trans_word_level_eval' else original_src_length)]
         word_tag.append(sentence_word_tags)
+
+    if not keep_unknown:
+        word_tag = replace_unknown(word_tag)
     return word_tag
 
 
@@ -214,11 +260,39 @@ def merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs, token
 
 
 def find_bad_word(tgt_src_effects, effecting_words_threshold):
+    """
+
+    Args:
+        tgt_src_effects: output of the analysis
+        effecting_words_threshold: if more than `effecting_words_threshold` src words changes effect the
+            translation, then it's a bad translation
+
+    Returns:
+
+    """
     bad_tgt_words = []
     for tgt_word, src_effects in tgt_src_effects.items():
         if len(src_effects['effecting_words']) > effecting_words_threshold:
             bad_tgt_words.append(tgt_word)
     return bad_tgt_words
+
+
+def find_ok_word(tgt_src_effects, no_effecting_words_threshold):
+    """
+
+    Args:
+        tgt_src_effects: output of the analysis
+        no_effecting_words_threshold: if more than `no_effecting_words_threshold` src words changes do not effect the
+            translation, then it's a good translation
+
+    Returns:
+
+    """
+    ok_tgt_words = []
+    for tgt_word, src_effects in tgt_src_effects.items():
+        if len(src_effects['no_effecting_words']) > no_effecting_words_threshold:
+            ok_tgt_words.append(tgt_word)
+    return ok_tgt_words
 
 
 def main():
@@ -228,6 +302,7 @@ def main():
     parser.add_argument('--data_root_path', type=str)
     parser.add_argument('--src_lang', type=str)
     parser.add_argument('--tgt_lang', type=str)
+    parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--sentence_level_eval_da', type=str_to_bool, default=False)
     parser.add_argument('--trans_word_level_eval', type=str_to_bool, default=False)
     parser.add_argument('--trans_word_level_eval_methods', type=str, nargs="*",
@@ -257,75 +332,64 @@ def main():
                              "is > threshold, that word is marked as BAD"
                              "Provide a list of options for hyperparams tuning."
                              "E.g., [1, 2, 3, 4]",
-                        default=[1, 2, 3, 4])
+                        default=[2])
+    parser.add_argument('--consistence_trans_portion_thresholds', type=float, nargs="*",
+                        help="1 sentence 1 perturbed word different replacement."
+                             "For a translated word, if the frequency of the most common translation among different perturbation"
+                             " > consistence_trans_portion_threshold"
+                             "then it is a consistence translation."
+                             "Provide a list of options for hyperparams tuning."
+                             "E.g., [0.6, 0.7, 0.8, 0.9]",
+                        default=[0.6, 0.7, 0.8, 0.9])
+    parser.add_argument('--uniques_portion_for_noiseORperturbed_thresholds', type=float, nargs="*",
+                        help="1 sentence 1 perturbed word different replacement."
+                             "For a translated word, if the portion of unique translation among different perturbation"
+                             " > uniques_portion_for_noiseORperturbed_threshold"
+                             "then it is the perturbed word or noise."
+                             "Provide a list of options for hyperparams tuning."
+                             "E.g., [0.4, 0.6, 0.8]",
+                        default=[0.4])
+    parser.add_argument('--no_effecting_words_portion_thresholds', type=int, nargs="*",
+                        help="For a word, if the number of SRC words in the sentence NOT effecting its translation"
+                             "is > threshold, that word is marked as OK"
+                             "Provide a list of options for hyperparams tuning."
+                             "E.g., [0.4, 0.5, 0.6, 0.7, 0.8, 0.9]",
+                        default=[0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
 
     args = parser.parse_args()
     print(args)
 
+    set_seed(args.seed)
+
     if args.trans_word_level_eval:
         task = 'trans_word_level_eval'
-        print("---------------------------------------")
-        print(f"Hyperparams tuning for task {task}")
-        max_score = 0
-        for trans_word_level_eval_method in args.trans_word_level_eval_methods:
-            print(f"\tMethod: {trans_word_level_eval_method}")
-            if trans_word_level_eval_method == 'nmt_log_prob':
-                for nmt_log_prob_threshold in args.nmt_log_prob_thresholds:
-                    matthews_corrcoef_score = word_level_eval(task, args.dataset, args.data_root_path, args.src_lang, args.tgt_lang,
-                                                              args.perturbed_trans_df_path,
-                                                              word_level_eval_method=trans_word_level_eval_method,
-                                                              nmt_log_prob_threshold=nmt_log_prob_threshold)
-                    print(f"\t\tnmt_log_prob_thresholds: {nmt_log_prob_threshold}")
-                    print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
-                    if matthews_corrcoef_score >= max_score:
-                        print("\t\t\tCurrent best")
-            elif trans_word_level_eval_method == 'nr_effecting_src_words':
-                for effecting_words_threshold in args.effecting_words_thresholds:
-                    matthews_corrcoef_score = word_level_eval(task, args.dataset, args.data_root_path, args.src_lang,
-                                                              args.tgt_lang,
-                                                              args.perturbed_trans_df_path,
-                                                              word_level_eval_method=trans_word_level_eval_method,
-                                                              effecting_words_threshold=effecting_words_threshold)
-                    print(f"\t\teffecting_words_threshold: {effecting_words_threshold}")
-                    print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
-                    if matthews_corrcoef_score >= max_score:
-                        max_score = matthews_corrcoef_score
-                        print("\t\t\tCurrent best")
-            else:
-                raise RuntimeError(f"Unknown method {trans_word_level_eval_method} for task {task}")
+        hyperparams_tune_word_level_eval(methods=args.trans_word_level_eval_methods,
+                                         nmt_log_prob_thresholds=args.nmt_log_prob_thresholds,
+                                         dataset=args.dataset,
+                                         data_root_path=args.data_root_path,
+                                         src_lang=args.src_lang,
+                                         tgt_lang=args.tgt_lang,
+                                         perturbed_trans_df_path=args.perturbed_trans_df_path,
+                                         effecting_words_thresholds=args.effecting_words_thresholds,
+                                         consistence_trans_portion_thresholds=args.consistence_trans_portion_thresholds,
+                                         uniques_portion_for_noiseORperturbed_thresholds=args.uniques_portion_for_noiseORperturbed_thresholds,
+                                         no_effecting_words_portion_thresholds=args.no_effecting_words_portion_thresholds,
+                                         task=task)
 
     if args.src_word_level_eval:
         task = 'src_word_level_eval'
-        print("---------------------------------------")
-        print(f"Hyperparams tuning for task {task}")
-        max_score = 0
-        for src_word_level_eval_method in args.src_word_level_eval_methods:
-            print(f"\tMethod: {src_word_level_eval_method}")
-            if src_word_level_eval_method == 'nmt_log_prob':
-                for nmt_log_prob_threshold in args.nmt_log_prob_thresholds:
-                    matthews_corrcoef_score = word_level_eval(task, args.dataset, args.data_root_path, args.src_lang,
-                                                              args.tgt_lang,
-                                                              args.perturbed_trans_df_path,
-                                                              word_level_eval_method=src_word_level_eval_method,
-                                                              nmt_log_prob_threshold=nmt_log_prob_threshold)
-                    print(f"\t\tnmt_log_prob_thresholds: {nmt_log_prob_threshold}")
-                    print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
-                    if matthews_corrcoef_score >= max_score:
-                        print("\t\t\tCurrent best")
-            elif src_word_level_eval_method == 'nr_effecting_src_words':
-                for effecting_words_threshold in args.effecting_words_thresholds:
-                    matthews_corrcoef_score = word_level_eval(task, args.dataset, args.data_root_path, args.src_lang,
-                                                              args.tgt_lang,
-                                                              args.perturbed_trans_df_path,
-                                                              word_level_eval_method=src_word_level_eval_method,
-                                                              effecting_words_threshold=effecting_words_threshold)
-                    print(f"\t\teffecting_words_threshold: {effecting_words_threshold}")
-                    print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
-                    if matthews_corrcoef_score >= max_score:
-                        max_score = matthews_corrcoef_score
-                        print("\t\t\tCurrent best")
-            else:
-                raise RuntimeError(f"Unknown method {src_word_level_eval_method} for task {task}")
+        hyperparams_tune_word_level_eval(methods=args.trans_word_level_eval_methods,
+                                         nmt_log_prob_thresholds=args.nmt_log_prob_thresholds,
+                                         dataset=args.dataset,
+                                         data_root_path=args.data_root_path,
+                                         src_lang=args.src_lang,
+                                         tgt_lang=args.tgt_lang,
+                                         perturbed_trans_df_path=args.perturbed_trans_df_path,
+                                         effecting_words_thresholds=args.effecting_words_thresholds,
+                                         consistence_trans_portion_thresholds=args.consistence_trans_portion_thresholds,
+                                         uniques_portion_for_noiseORperturbed_thresholds=args.uniques_portion_for_noiseORperturbed_thresholds,
+                                         no_effecting_words_portion_thresholds=args.no_effecting_words_portion_thresholds,
+                                         task=task)
 
     if args.sentence_level_eval_da:
         perturbed_trans_df = pd.read_pickle(args.perturbed_trans_df_path)
@@ -339,7 +403,10 @@ def main():
         ].groupby("SRC_original_idx").mean()
 
         word_level_tags = nr_effecting_src_words_eval(args.perturbed_trans_df_path, args.effecting_words_threshold,
-                                                      task='trans_word_level_eval')
+                                                      task='trans_word_level_eval',
+                                                      consistence_trans_portion_threshold=args.consistence_trans_portion_threshold,
+                                                      uniques_portion_for_noiseORperturbed_threshold=args.uniques_portion_for_noiseORperturbed_threshold,
+                                                      no_effecting_words_portion_threshold=args.no_effecting_words_portion_threshold)
         approximations['word_level_agg'] = [x.count('BAD') for x in word_level_tags]
 
         for col in approximations.columns:
@@ -358,17 +425,77 @@ def main():
             )
 
 
+def hyperparams_tune_word_level_eval(methods, nmt_log_prob_thresholds, dataset, data_root_path, src_lang,
+                                     tgt_lang, perturbed_trans_df_path, effecting_words_thresholds,
+                                     consistence_trans_portion_thresholds,
+                                     uniques_portion_for_noiseORperturbed_thresholds,
+                                     no_effecting_words_portion_thresholds,
+                                     task):
+    print("---------------------------------------")
+    print(f"Hyperparams tuning for task {task}")
+    for method in methods:
+        print(f"\tMethod: {method}")
+        max_score = 0
+        best_hyperparams = None
+        if method == 'nmt_log_prob':
+            for nmt_log_prob_threshold in nmt_log_prob_thresholds:
+                matthews_corrcoef_score = word_level_eval(task, dataset, data_root_path, src_lang,
+                                                          tgt_lang,
+                                                          perturbed_trans_df_path,
+                                                          word_level_eval_method=method,
+                                                          nmt_log_prob_threshold=nmt_log_prob_threshold
+                                                          )
+                print(f"\t\tnmt_log_prob_thresholds: {nmt_log_prob_threshold}")
+                print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
+                if matthews_corrcoef_score >= max_score:
+                    max_score = matthews_corrcoef_score
+                    best_hyperparams = nmt_log_prob_threshold
+
+        elif method == 'nr_effecting_src_words':
+            hyperparams_choices = [effecting_words_thresholds, consistence_trans_portion_thresholds,
+                                   uniques_portion_for_noiseORperturbed_thresholds, no_effecting_words_portion_thresholds]
+            choice_tuples = list(itertools.product(*hyperparams_choices))
+            for choice_tuple in choice_tuples:
+                effecting_words_threshold, consistence_trans_portion_threshold, \
+                uniques_portion_for_noiseORperturbed_threshold, no_effecting_words_portion_threshold = choice_tuple
+                matthews_corrcoef_score = word_level_eval(task, dataset, data_root_path, src_lang,
+                                                          tgt_lang,
+                                                          perturbed_trans_df_path,
+                                                          word_level_eval_method=method,
+                                                          effecting_words_threshold=effecting_words_threshold,
+                                                          consistence_trans_portion_threshold=consistence_trans_portion_threshold,
+                                                          uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold,
+                                                          no_effecting_words_portion_threshold=no_effecting_words_portion_threshold
+                                                          )
+                print(f"\t\teffecting_words_threshold: {effecting_words_threshold}")
+                print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
+                if matthews_corrcoef_score >= max_score:
+                    max_score = matthews_corrcoef_score
+                    best_hyperparams = choice_tuples
+        else:
+            raise RuntimeError(f"Unknown method {method} for task {task}")
+
+        print(f"*************** FINAL BEST FOR METHOD {method}: best score {max_score}, best params {best_hyperparams}")
+
+
 def word_level_eval(task, dataset, data_root_path, src_lang, tgt_lang, perturbed_trans_df_path, word_level_eval_method,
-                    nmt_log_prob_threshold=0.5, effecting_words_threshold=2):
+                    nmt_log_prob_threshold=0.5, effecting_words_threshold=2, consistence_trans_portion_threshold=0.8,
+                    uniques_portion_for_noiseORperturbed_threshold=0.4,
+                    no_effecting_words_portion_threshold=0.8):
     gold_labels = load_gold_labels(dataset, data_root_path, src_lang, tgt_lang,
                                    task=task)
     if word_level_eval_method == 'nmt_log_prob':
-        pred_labels = mnt_log_prob_eval(dataset, data_root_path, src_lang,
+        pred_labels = nmt_log_prob_eval(dataset, data_root_path, src_lang,
                                         tgt_lang, nmt_log_prob_threshold,
                                         perturbed_trans_df_path, task=task)
     elif word_level_eval_method == 'nr_effecting_src_words':
-        pred_labels = nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_threshold,
-                                                  task=task)
+        pred_labels = nr_effecting_src_words_eval(
+            perturbed_trans_df_path, effecting_words_threshold,
+            task=task,
+            consistence_trans_portion_threshold=consistence_trans_portion_threshold,
+            uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold,
+            no_effecting_words_portion_threshold=no_effecting_words_portion_threshold
+        )
     else:
         raise RuntimeError(f"Method {word_level_eval_method} not available for task {task}.")
 

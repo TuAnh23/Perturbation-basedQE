@@ -1,6 +1,7 @@
 """
 Load and process a given dataset to a common format: a dataframe with SRC and REF columns (REF is optional), index
 from 0 to n.
+For WMT QE data, also the add the provided tokenized SRC (column tokenized_SRC)
 """
 
 import argparse
@@ -127,15 +128,23 @@ def main():
             en_sentences = f.readlines()
             en_sentences = [line.rstrip() for line in en_sentences]
 
-        src_df = pd.DataFrame(data={'SRC': en_sentences})
+        with open(f"{args.data_root_dir}/wmt-qe-2021-data/{args.src_lang}-{args.tgt_lang}-test21/test21.tok.src") as f:
+            en_sentences_tok = f.readlines()
+            en_sentences_tok = [line.rstrip() for line in en_sentences_tok]
+
+        src_df = pd.DataFrame(data={'SRC': en_sentences, 'tokenized_SRC': en_sentences_tok})
 
     elif args.dataname == 'WMT21_DA_dev':
         assert args.src_lang == 'en'
-        with open(f"{args.data_root_dir}/wmt-qe-2021-data/{args.src_lang}-{args.tgt_lang}-dev/dev.src") as f:
+        with open(f"{args.data_root_dir}/data/wmt-qe-2021-data/{args.src_lang}-{args.tgt_lang}-dev/post-editing/{args.src_lang}-{args.tgt_lang}-dev/dev.src", 'r') as f:
             en_sentences = f.readlines()
             en_sentences = [line.rstrip() for line in en_sentences]
 
-        src_df = pd.DataFrame(data={'SRC': en_sentences})
+        with open(f"{args.data_root_dir}/wmt-qe-2021-data/{args.src_lang}-{args.tgt_lang}-dev/post-editing/{args.src_lang}-{args.tgt_lang}-dev/dev.src") as f:
+            en_sentences_tok = f.readlines()
+            en_sentences_tok = [line.rstrip() for line in en_sentences_tok]
+
+        src_df = pd.DataFrame(data={'SRC': en_sentences, 'tokenized_SRC': en_sentences_tok})
 
     else:
         raise RuntimeError(f"Dataset {args.dataname} not available.")

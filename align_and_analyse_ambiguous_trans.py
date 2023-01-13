@@ -87,7 +87,8 @@ def align_src_tgt_translations(sentence_df):
             (Single sentence, single perturbed word, different replacements)
     Returns:
         result_df: the column labels are the tokenized original SRC sentence
-            the row labels are the different replacements of the perturbed word
+            the row labels are the different replacements of the perturbed word.
+            The first row is the translation of the original version
     """
     # Convert everything to lowercase
     sentence_df = sentence_df.copy()
@@ -108,25 +109,29 @@ def align_src_tgt_translations(sentence_df):
 
     original_src_tokenized = sentence_df['tokenized_SRC'].values[0]
     original_word_index = original_src_tokenized.index(original_word)
-    original_src_tokenized[original_word_index] = '[MASK]'
 
     result_df = pd.DataFrame(
-        index=[original_word] + sentence_df['perturbed_word'].tolist(),
-        columns=original_src_tokenized
+        index=[original_word] + sentence_df['perturbed_word'].tolist(),  # original translation meant to be in the first row
+        columns=original_src_tokenized,
+        # columns=['[MASK]' if i == original_word_index else original_src_tokenized[i]
+        #          for i in range(len(original_src_tokenized))]
     )
 
-    # Add the original translation
-    result_df.loc[original_word] = original_trans_alignment
-    result_df.loc[original_word, '[MASK]'] = \
+    # Add the original translation in the first row
+    result_df.iloc[0] = original_trans_alignment
+    result_df.iloc[0, original_word_index] = \
         original_trans_alignment[original_word] if original_word in original_trans_alignment.keys() else pd.NA
 
     # Add the perturbed translation
+    result_df_i_row = 1
     for index, row in sentence_df.iterrows():
         perturbed_word = row['perturbed_word']
         perturbed_trans_alignment = row['perturbed_trans_alignment']
-        result_df.loc[perturbed_word] = perturbed_trans_alignment
-        result_df.loc[perturbed_word, '[MASK]'] = \
+        result_df.iloc[result_df_i_row] = perturbed_trans_alignment
+        result_df.iloc[result_df_i_row, original_word_index] = \
             perturbed_trans_alignment[perturbed_word] if perturbed_word in perturbed_trans_alignment.keys() else pd.NA
+
+        result_df_i_row = result_df_i_row + 1
 
     # Fix columns with same name (due to word occurs twice in a sentence)
     result_df.columns = uniquify(result_df.columns)
@@ -149,19 +154,21 @@ def align_translations_tgt_only(sentence_df):
     original_trans_tokenized = sentence_df['tokenized_SRC-Trans'].values[0]
 
     result_df = pd.DataFrame(
-        index=[original_word] + sentence_df['perturbed_word'].tolist(), columns=original_trans_tokenized
+        index=[original_word] + sentence_df['perturbed_word'].tolist(), # original translation meant to be in the first row
+        columns=original_trans_tokenized
     )
 
-    # Add the original translation
-    result_df.loc[original_word] = original_trans_tokenized
+    # Add the original translation in the first row
+    result_df.iloc[0] = original_trans_tokenized
 
     # Add the perturbed translation
+    result_df_i_row = 1
     for index, row in sentence_df.iterrows():
-        perturbed_word = row['perturbed_word']
         alignment = edist_alignment(original_trans_tokenized, row['tokenized_SRC_perturbed-Trans'])
-        result_df.loc[perturbed_word] = reorder_according_to_alignment(
+        result_df.iloc[result_df_i_row] = reorder_according_to_alignment(
             original_trans_tokenized, row['tokenized_SRC_perturbed-Trans'], alignment
         )
+        result_df_i_row = result_df_i_row + 1
 
     # Fix columns with same name (due to word occurs twice in a sentence)
     result_df.columns = uniquify(result_df.columns)
@@ -193,7 +200,9 @@ def align_translations(sentence_df, align_type="src-trans"):
 
 
 def analyse_single_sentence_single_perturbed_word(sentence_perturbed_word_df, align_type="trans-only",
-                                                  filter_content_word=True, return_word_index=False):
+                                                  filter_content_word=False, return_word_index=False,
+                                                  consistence_trans_portion_threshold=0.8,
+                                                  uniques_portion_for_noiseORperturbed_threshold=0.4):
     """
     Single sentence, single perturbed word, different replacements.
     Analyse each word in the original SRC (if align_type=="src-trans")
@@ -201,8 +210,8 @@ def analyse_single_sentence_single_perturbed_word(sentence_perturbed_word_df, al
     Whether each word is:
     - `perturbed_or_noise_words`: having many different translations. either this word is noise, or it is the perturbed
         word (different translations due to different replacements)
-    - `words_with_clustered_trans`: having a few different translations
-    - `words_with_single_trans`: word with the same translations in all perturbed sentences
+    - `words_with_unstable_trans`: having a few different translations
+    - `words_with_consistent_trans`: word with the same translations in almost all perturbed sentences
     Params:
         sentence_perturbed_word_df: the dataframe containing the different translations of
             (Single sentence, single perturbed word, different replacements)
@@ -210,19 +219,23 @@ def analyse_single_sentence_single_perturbed_word(sentence_perturbed_word_df, al
                     "trans-only" align the translations with each other, using edit distance
         filter_content_word: whether to consider only the content words
         return_word_index: return word index instead of the word itself
+        consistence_trans_portion_threshold
+        uniques_portion_for_noiseORperturbed_threshold:  # nr_uniques_trans / nr_replacements_non_nan
     Returns:
         result = {'perturbed_or_noise_words': list of words,
-                  'words_with_clustered_trans': {word: {trans:trans' frequency}},
-                  'words_with_single_trans': {word: trans}
+                  'words_with_unstable_trans': {word: {trans:trans' frequency}},
+                  'words_with_consistent_trans': {word: trans}
                   }
     """
-    nr_replacements = sentence_perturbed_word_df.shape[0]
+    # In the case of SRC-TGT alignment, the original version is counted as a replacement
+    nr_replacements = sentence_perturbed_word_df.shape[0] if align_type == "trans-only" \
+        else sentence_perturbed_word_df.shape[0] + 1 if align_type == "src-trans" else None
 
-    aligned_trans = align_translations(sentence_perturbed_word_df, align_type="trans-only")
+    aligned_trans = align_translations(sentence_perturbed_word_df, align_type=align_type)
 
     result = {'perturbed_or_noise_words': [],
-              'words_with_clustered_trans': {},
-              'words_with_single_trans': {}
+              'words_with_unstable_trans': {},
+              'words_with_consistent_trans': {}
               }
 
     for col_idx, col in enumerate(aligned_trans.columns):
@@ -233,43 +246,70 @@ def analyse_single_sentence_single_perturbed_word(sentence_perturbed_word_df, al
             filter_content_word = False
 
         if (not filter_content_word) or is_content_tag(nltk_pos_tag(word)):
-            count_unique_translated_words = aligned_trans[col].value_counts()
-            nr_unique_words = count_unique_translated_words.shape[0]
-
-            if nr_unique_words >= 5:
-                # If number of unique translations are large,
-                # then this is the column of the perturbed word or noise
+            count_unique_translated_words = aligned_trans[col].value_counts(sort=True, ascending=False)
+            if len(count_unique_translated_words) == 0:
+                # There is no directly aligned translation for this SRC word
+                # So consider this a noisily translated word
                 if return_word_index:
                     result['perturbed_or_noise_words'].append(col_idx)
                 else:
                     result['perturbed_or_noise_words'].append(col)
-            elif 2 <= nr_unique_words and nr_unique_words < 5:
-                # TODO: more evenly distributed trans??
-                # TODO: TEMPORARYLY LEAVING OUT SIMILARITY CALCULATION
-                #                 # Report the word and the minimum similarity between pair-wise unique translations
-                #                 unique_words = count_unique_translated_words.index.tolist()
-                #                 all_similarities = []
-                #                 for i in range(0, len(unique_words)):
-                #                     for j in range(i, len(unique_words)):
-                #                         all_similarities.append(de_model.similarity(unique_words[i], unique_words[j]))
-                if return_word_index:
-                    result['words_with_clustered_trans'][col_idx] = count_unique_translated_words.to_dict()
+                continue
+
+            nr_unique_words = count_unique_translated_words.shape[0]
+            # What is the portion of times that the most common translation occurs?
+            # E.g., different trans are "die die die der das" --> 0.6
+
+            portion_most_common_trans = count_unique_translated_words.iloc[0] / nr_replacements
+            most_common_trans = count_unique_translated_words.index[0]
+
+            original_trans = col if align_type == "trans-only" \
+                else aligned_trans.iloc[0][col] if align_type == "src-trans" else None
+
+            # trans_eval: one of the three values:
+            # ['words_with_consistent_trans', 'words_with_unstable_trans', 'perturbed_or_noise_words']
+
+            if portion_most_common_trans > consistence_trans_portion_threshold:
+                # If there is one dominant translation then the translation of this word is consistent
+                trans_eval = 'words_with_consistent_trans'
+            else:
+                # The case where there is no dominant translation
+                if nr_unique_words > uniques_portion_for_noiseORperturbed_threshold * aligned_trans[col].count():
+                    # If number of unique translations are large,
+                    # then this is the column of the perturbed word or noise
+                    trans_eval = 'perturbed_or_noise_words'
                 else:
-                    result['words_with_clustered_trans'][col] = count_unique_translated_words.to_dict()
-            elif nr_unique_words == 1:
-                # TODO: more flexibility with outliers?
+                    trans_eval = 'words_with_unstable_trans'
+
+            # Store result and returns
+            if trans_eval == 'words_with_consistent_trans':
                 if return_word_index:
-                    result['words_with_single_trans'][col_idx] = count_unique_translated_words.index[0]
+                    result['words_with_consistent_trans'][col_idx] = count_unique_translated_words.index[0]
                 else:
-                    result['words_with_single_trans'][col] = count_unique_translated_words.index[0]
+                    result['words_with_consistent_trans'][col] = count_unique_translated_words.index[0]
+            elif trans_eval == 'words_with_unstable_trans':
+                if return_word_index:
+                    result['words_with_unstable_trans'][col_idx] = count_unique_translated_words.to_dict()
+                else:
+                    result['words_with_unstable_trans'][col] = count_unique_translated_words.to_dict()
+            elif trans_eval == 'perturbed_or_noise_words':
+                if return_word_index:
+                    result['perturbed_or_noise_words'].append(col_idx)
+                else:
+                    result['perturbed_or_noise_words'].append(col)
+            else:
+                raise RuntimeError
 
     return result
 
 
 def analyse_single_sentence(sentence_df,
                             align_type="trans-only",
-                            filter_content_word=True,
-                            return_word_index=False):
+                            filter_content_word=False,
+                            return_word_index=False,
+                            consistence_trans_portion_threshold=0.8,
+                            uniques_portion_for_noiseORperturbed_threshold=0.4
+                            ):
     """
     Single sentence, different perturbed words, different replacements.
     Params:
@@ -298,33 +338,44 @@ def analyse_single_sentence(sentence_df,
         collect_results[original_word] = analyse_single_sentence_single_perturbed_word(group_by_perturbed_word,
                                                                                        align_type=align_type,
                                                                                        filter_content_word=filter_content_word,
-                                                                                       return_word_index=return_word_index)
+                                                                                       return_word_index=return_word_index,
+                                                                                       consistence_trans_portion_threshold=consistence_trans_portion_threshold,
+                                                                                       uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold
+                                                                                       )
 
-    # For ambiguous words, find the perturbed words that makes its trans ambiguous,
+    # For all words, find the perturbed words that makes its trans ambiguous,
     # and the perturbed words that makes its trans consistence
-    ambiguous_words = set(
-        sum([list(x['words_with_clustered_trans'].keys()) for x in collect_results.values()],
-            [])
-    )
+    if return_word_index:
+        if align_type == "trans-only":
+            # Original translation tokens/words
+            words = list(range(0, len(sentence_df.iloc[0]['tokenized_SRC-Trans'])))
+        elif align_type == "src-trans":
+            # Original src tokens/words
+            words = list(range(0, len(sentence_df.iloc[0]['tokenized_SRC'])))
+        else:
+            raise RuntimeError(f"Unknown align_type {align_type}")
+    else:
+        if align_type == "trans-only":
+            # Original translation tokens/words
+            words = uniquify(sentence_df.iloc[0]['tokenized_SRC-Trans'])
+        elif align_type == "src-trans":
+            # Original src tokens/words
+            words = uniquify(sentence_df.iloc[0]['tokenized_SRC'])
+        else:
+            raise RuntimeError(f"Unknown align_type {align_type}")
 
     result = {}
-    for ambiguous_word in ambiguous_words:
+    for word in words:
         no_effect_words = []
         effect_words = []
 
         for original_word, collected_result in collect_results.items():
-            if ambiguous_word in collected_result['words_with_clustered_trans']:
+            if word in collected_result['words_with_unstable_trans']:
                 effect_words.append(original_word)
-            elif ambiguous_word in collected_result['words_with_single_trans']:
+            elif word in collected_result['words_with_consistent_trans']:
                 no_effect_words.append(original_word)
 
-        result[ambiguous_word] = {'no_effecting_words': no_effect_words,
-                                  'effecting_words': effect_words}
+        result[word] = {'no_effecting_words': no_effect_words,
+                        'effecting_words': effect_words}
 
     return result
-
-
-
-
-
-

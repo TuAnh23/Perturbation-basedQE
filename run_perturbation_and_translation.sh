@@ -10,11 +10,11 @@ export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
 nvidia-smi
 
-dataname="covost2_all"
-qe_wmt21="False"
+dataname="WMT21_DA_dev"
+qe_wmt21="True"
 SRC_LANG="en"
-TGT_LANG="vi"
-mask_type="MultiplePerSentence_country"
+TGT_LANG="de"
+mask_type="MultiplePerSentence_allTokens"
 dev=False
 grouped_mask=False
 trans_direction="${SRC_LANG}2${TGT_LANG}"
