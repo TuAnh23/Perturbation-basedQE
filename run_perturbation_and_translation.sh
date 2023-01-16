@@ -4,17 +4,17 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
 nvidia-smi
 
-dataname="WMT21_DA_dev"
+dataname="WMT21_DA_test"
 qe_wmt21="True"
 SRC_LANG="en"
 TGT_LANG="de"
-mask_type="MultiplePerSentence_allTokens"
+mask_type="MultiplePerSentence_content"
 dev=False
 grouped_mask=False
 trans_direction="${SRC_LANG}2${TGT_LANG}"

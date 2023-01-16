@@ -4,20 +4,20 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=1
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
 nvidia-smi
 
-dataname="WMT21_DA_dev"
+dataname="WMT21_DA_test"
 SRC_LANG="en"
 TGT_LANG="de"
 sentence_level_eval_da="False"
 
 trans_word_level_eval="True"
 src_word_level_eval="True"
-declare -a mask_types=("MultiplePerSentence_content" "MultiplePerSentence_allWords" "MultiplePerSentence_allTokens" )
+declare -a mask_types=("MultiplePerSentence_content" ) # "MultiplePerSentence_allWords" "MultiplePerSentence_allTokens" )
 use_src_tgt_alignment="True"
 
 dev=False
@@ -103,10 +103,11 @@ for mask_type in ${mask_types[@]}; do
     --sentence_level_eval_da ${sentence_level_eval_da} \
     --trans_word_level_eval ${trans_word_level_eval} \
     --trans_word_level_eval_methods 'nmt_log_prob' 'nr_effecting_src_words' \
-    --nmt_log_prob_thresholds 0.4 0.45 0.5 0.55 0.6 0.65 0.7 0.75 \
+    --nmt_log_prob_thresholds 0.45 \
     --src_word_level_eval ${src_word_level_eval} \
     --src_word_level_eval_methods 'nmt_log_prob' 'nr_effecting_src_words' \
-    --consistence_trans_portion_thresholds 0.6 0.65 0.7 0.75 0.8 0.85 0.9 \
-    --no_effecting_words_portion_thresholds 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 \
+    --effecting_words_thresholds 1 \
+    --consistence_trans_portion_thresholds 0.9 \
+    --uniques_portion_for_noiseORperturbed_thresholds 0.4 \
     |& tee ${analyse_output_path}/quality_estimation.log
 done

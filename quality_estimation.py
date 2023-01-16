@@ -180,13 +180,13 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
             uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold
         )
         bad_words = find_bad_word(tgt_src_effects, effecting_words_threshold)
-        ok_words = find_ok_word(tgt_src_effects,
-                                no_effecting_words_threshold=original_src_length*no_effecting_words_portion_threshold)
-        # sentence_word_tags = ['BAD' if x in bad_words else 'OK' if x in ok_words else 'unknown'
-        #                       for x in range(0,
-        #                                      original_trans_length if task == 'trans_word_level_eval' else original_src_length)]
-        sentence_word_tags = ['OK' if x in ok_words else 'BAD' for x in range(0,
-                              original_trans_length if task == 'trans_word_level_eval' else original_src_length)]
+        # ok_words = find_ok_word(tgt_src_effects,
+        #                         no_effecting_words_threshold=original_src_length*no_effecting_words_portion_threshold)
+        sentence_word_tags = ['BAD' if x in bad_words else 'OK'
+                              for x in range(0,
+                                             original_trans_length if task == 'trans_word_level_eval' else original_src_length)]
+        # sentence_word_tags = ['OK' if x in ok_words else 'BAD' for x in range(0,
+        #                       original_trans_length if task == 'trans_word_level_eval' else original_src_length)]
         word_tag.append(sentence_word_tags)
 
     if not keep_unknown:
@@ -332,7 +332,7 @@ def main():
                              "is > threshold, that word is marked as BAD"
                              "Provide a list of options for hyperparams tuning."
                              "E.g., [1, 2, 3, 4]",
-                        default=[2])
+                        default=[1])
     parser.add_argument('--consistence_trans_portion_thresholds', type=float, nargs="*",
                         help="1 sentence 1 perturbed word different replacement."
                              "For a translated word, if the frequency of the most common translation among different perturbation"
@@ -340,7 +340,7 @@ def main():
                              "then it is a consistence translation."
                              "Provide a list of options for hyperparams tuning."
                              "E.g., [0.6, 0.7, 0.8, 0.9]",
-                        default=[0.6, 0.7, 0.8, 0.9])
+                        default=[0.9])
     parser.add_argument('--uniques_portion_for_noiseORperturbed_thresholds', type=float, nargs="*",
                         help="1 sentence 1 perturbed word different replacement."
                              "For a translated word, if the portion of unique translation among different perturbation"
@@ -349,12 +349,12 @@ def main():
                              "Provide a list of options for hyperparams tuning."
                              "E.g., [0.4, 0.6, 0.8]",
                         default=[0.4])
-    parser.add_argument('--no_effecting_words_portion_thresholds', type=int, nargs="*",
+    parser.add_argument('--no_effecting_words_portion_thresholds', type=float, nargs="*",
                         help="For a word, if the number of SRC words in the sentence NOT effecting its translation"
                              "is > threshold, that word is marked as OK"
                              "Provide a list of options for hyperparams tuning."
                              "E.g., [0.4, 0.5, 0.6, 0.7, 0.8, 0.9]",
-                        default=[0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+                        default=[0.6])
 
     args = parser.parse_args()
     print(args)
@@ -467,11 +467,11 @@ def hyperparams_tune_word_level_eval(methods, nmt_log_prob_thresholds, dataset, 
                                                           uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold,
                                                           no_effecting_words_portion_threshold=no_effecting_words_portion_threshold
                                                           )
-                print(f"\t\teffecting_words_threshold: {effecting_words_threshold}")
+                print(f"\t\tchoice_tuple: {choice_tuple}")
                 print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
                 if matthews_corrcoef_score >= max_score:
                     max_score = matthews_corrcoef_score
-                    best_hyperparams = choice_tuples
+                    best_hyperparams = choice_tuple
         else:
             raise RuntimeError(f"Unknown method {method} for task {task}")
 

@@ -136,7 +136,7 @@ def main():
 
     elif args.dataname == 'WMT21_DA_dev':
         assert args.src_lang == 'en'
-        with open(f"{args.data_root_dir}/data/wmt-qe-2021-data/{args.src_lang}-{args.tgt_lang}-dev/post-editing/{args.src_lang}-{args.tgt_lang}-dev/dev.src", 'r') as f:
+        with open(f"{args.data_root_dir}/wmt-qe-2021-data/{args.src_lang}-{args.tgt_lang}-dev/post-editing/{args.src_lang}-{args.tgt_lang}-dev/dev.src", 'r') as f:
             en_sentences = f.readlines()
             en_sentences = [line.rstrip() for line in en_sentences]
 
