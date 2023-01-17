@@ -4,13 +4,13 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=2
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
 nvidia-smi
 
-dataname="WMT21_DA_test"
+dataname="WMT21_DA_dev"
 SRC_LANG="en"
 TGT_LANG="de"
 sentence_level_eval_da="False"
@@ -106,8 +106,8 @@ for mask_type in ${mask_types[@]}; do
     --nmt_log_prob_thresholds 0.45 \
     --src_word_level_eval ${src_word_level_eval} \
     --src_word_level_eval_methods 'nmt_log_prob' 'nr_effecting_src_words' \
-    --effecting_words_thresholds 1 \
-    --consistence_trans_portion_thresholds 0.9 \
+    --effecting_words_thresholds 2 \
+    --consistence_trans_portion_thresholds 0.95 \
     --uniques_portion_for_noiseORperturbed_thresholds 0.4 \
     |& tee ${analyse_output_path}/quality_estimation.log
 done

@@ -60,13 +60,13 @@ def is_content_tag(nltk_pos):
     return False
 
 
-def uniquify(df_columns):
+def uniquify(a_list):
     """
-    Add suffix to distinguish duplicated colunms' names
+    Add suffix to distinguish duplicated values in list
     """
     seen = set()
 
-    for item in df_columns:
+    for item in a_list:
         fudge = 1
         newitem = item
 
@@ -260,7 +260,7 @@ def analyse_single_sentence_single_perturbed_word(sentence_perturbed_word_df, al
             # What is the portion of times that the most common translation occurs?
             # E.g., different trans are "die die die der das" --> 0.6
 
-            portion_most_common_trans = count_unique_translated_words.iloc[0] / nr_replacements
+            portion_most_common_trans = count_unique_translated_words.iloc[0] / aligned_trans[col].count()
             most_common_trans = count_unique_translated_words.index[0]
 
             original_trans = col if align_type == "trans-only" \
@@ -331,10 +331,14 @@ def analyse_single_sentence(sentence_df,
     count_original_sentence_idx = sentence_df['SRC_original_idx'].value_counts()
     assert count_original_sentence_idx.shape[0] == 1  # Because this function is for a single group
 
-    groups_by_perturbed_word = sentence_df.groupby("original_word", as_index=False)
+    groups_by_perturbed_word = sentence_df.groupby("SRC_masked_index", as_index=False)
 
     collect_results = {}
-    for original_word, group_by_perturbed_word in groups_by_perturbed_word:
+    original_words = [group_by_perturbed_word.iloc[0]['original_word']
+                      for _, group_by_perturbed_word in groups_by_perturbed_word]
+    groups_by_perturbed_word = [group_by_perturbed_word for _, group_by_perturbed_word in groups_by_perturbed_word]
+    original_words = uniquify(original_words)
+    for original_word, group_by_perturbed_word in zip(original_words, groups_by_perturbed_word):
         collect_results[original_word] = analyse_single_sentence_single_perturbed_word(group_by_perturbed_word,
                                                                                        align_type=align_type,
                                                                                        filter_content_word=filter_content_word,
