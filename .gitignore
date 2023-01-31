@@ -17,3 +17,5 @@ output/*
 notebooks/tmp_storages/*
 
 .tmp.driveupload/*
+
+*.log

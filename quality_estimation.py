@@ -10,6 +10,7 @@ from align_and_analyse_ambiguous_trans import analyse_single_sentence
 from scipy.stats import zscore
 from scipy.stats import pearsonr, spearmanr
 from collections import defaultdict
+from sacremoses import MosesTokenizer
 
 
 def load_gold_labels(dataset, data_root_path, src_lang, tgt_lang, task):
@@ -91,9 +92,9 @@ def flatten_list(list_of_lists):
 
 
 def nmt_log_prob_eval(dataset, data_root_path, src_lang, tgt_lang, nmt_log_prob_threshold, perturbed_trans_df_path,
-                      task, keep_unknown=False):
-    word_log_probs = get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang)
-    threshold = np.log(nmt_log_prob_threshold)
+                      task, original_translation_output_dir, keep_unknown=False):
+    word_log_probs = get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang, original_translation_output_dir)
+    threshold = np.log2(nmt_log_prob_threshold)
     if task == 'trans_word_level_eval':
         pred_labels = log_prob_to_label(threshold, word_log_probs)
     elif task == 'src_word_level_eval':
@@ -194,17 +195,28 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
     return word_tag
 
 
-def get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang):
+def get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang, original_translation_output_dir):
+    subwords_path = f"{original_translation_output_dir}/mt.out"
+    subword_log_probs_path = f"{original_translation_output_dir}/log_prob.out"
+
     if dataset == 'WMT21_DA_test':
-        subwords_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/word-probas/mt.test21.{src_lang}{tgt_lang}"
-        subword_log_probs_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/word-probas/word_probas.test21.{src_lang}{tgt_lang}"
         tokenized_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/test21.tok.mt"
+        with open(tokenized_path, 'r') as f:
+            tokenized_translations = f.readlines()
+            tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
     elif dataset == 'WMT21_DA_dev':
-        subwords_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/direct-assessments/{src_lang}-{tgt_lang}-dev/word-probas/mt.dev.{src_lang}{tgt_lang}"
-        subword_log_probs_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/direct-assessments/{src_lang}-{tgt_lang}-dev/word-probas/word_probas.dev.{src_lang}{tgt_lang}"
         tokenized_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/{src_lang}-{tgt_lang}-dev/dev.mt"
+        with open(tokenized_path, 'r') as f:
+            tokenized_translations = f.readlines()
+            tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
     else:
-        raise RuntimeError(f"get_nmt_word_log_probs not available for dataset {dataset}")
+        with open(f"{original_translation_output_dir}/trans_sentences.txt", 'r') as f:
+            translations = f.readlines()
+            translations = [line.rstrip() for line in translations]
+
+        tgt_tokenizer = MosesTokenizer(lang=tgt_lang)
+        tokenized_translations = [tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
+                                  for x in translations]
 
     with open(subwords_path, 'r') as f:
         subwords = f.readlines()
@@ -215,10 +227,6 @@ def get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang):
         subword_log_probs = [line.replace('\n', '').split() for line in subword_log_probs]
         # Cast all values to float
         subword_log_probs = [[float(x) for x in y] for y in subword_log_probs]
-
-    with open(tokenized_path, 'r') as f:
-        tokenized_translations = f.readlines()
-        tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
 
     word_log_probs = merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs, tokenized_translations)
     return word_log_probs
@@ -298,6 +306,8 @@ def find_ok_word(tgt_src_effects, no_effecting_words_threshold):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--perturbed_trans_df_path', type=str)
+    parser.add_argument('--original_translation_output_dir', type=str,
+                        help='Folder containing the translation output, including the log probabilities')
     parser.add_argument('--dataset', type=str, choices=['WMT21_DA_test', 'WMT21_DA_dev'])
     parser.add_argument('--data_root_path', type=str)
     parser.add_argument('--src_lang', type=str)
@@ -370,6 +380,7 @@ def main():
                                          src_lang=args.src_lang,
                                          tgt_lang=args.tgt_lang,
                                          perturbed_trans_df_path=args.perturbed_trans_df_path,
+                                         original_translation_output_dir=args.original_translation_output_dir,
                                          effecting_words_thresholds=args.effecting_words_thresholds,
                                          consistence_trans_portion_thresholds=args.consistence_trans_portion_thresholds,
                                          uniques_portion_for_noiseORperturbed_thresholds=args.uniques_portion_for_noiseORperturbed_thresholds,
@@ -385,6 +396,7 @@ def main():
                                          src_lang=args.src_lang,
                                          tgt_lang=args.tgt_lang,
                                          perturbed_trans_df_path=args.perturbed_trans_df_path,
+                                         original_translation_output_dir=args.original_translation_output_dir,
                                          effecting_words_thresholds=args.effecting_words_thresholds,
                                          consistence_trans_portion_thresholds=args.consistence_trans_portion_thresholds,
                                          uniques_portion_for_noiseORperturbed_thresholds=args.uniques_portion_for_noiseORperturbed_thresholds,
@@ -426,7 +438,8 @@ def main():
 
 
 def hyperparams_tune_word_level_eval(methods, nmt_log_prob_thresholds, dataset, data_root_path, src_lang,
-                                     tgt_lang, perturbed_trans_df_path, effecting_words_thresholds,
+                                     tgt_lang, perturbed_trans_df_path, original_translation_output_dir,
+                                     effecting_words_thresholds,
                                      consistence_trans_portion_thresholds,
                                      uniques_portion_for_noiseORperturbed_thresholds,
                                      no_effecting_words_portion_thresholds,
@@ -442,6 +455,7 @@ def hyperparams_tune_word_level_eval(methods, nmt_log_prob_thresholds, dataset, 
                 matthews_corrcoef_score = word_level_eval(task, dataset, data_root_path, src_lang,
                                                           tgt_lang,
                                                           perturbed_trans_df_path,
+                                                          original_translation_output_dir=original_translation_output_dir,
                                                           word_level_eval_method=method,
                                                           nmt_log_prob_threshold=nmt_log_prob_threshold
                                                           )
@@ -461,6 +475,7 @@ def hyperparams_tune_word_level_eval(methods, nmt_log_prob_thresholds, dataset, 
                 matthews_corrcoef_score = word_level_eval(task, dataset, data_root_path, src_lang,
                                                           tgt_lang,
                                                           perturbed_trans_df_path,
+                                                          original_translation_output_dir=original_translation_output_dir,
                                                           word_level_eval_method=method,
                                                           effecting_words_threshold=effecting_words_threshold,
                                                           consistence_trans_portion_threshold=consistence_trans_portion_threshold,
@@ -478,7 +493,8 @@ def hyperparams_tune_word_level_eval(methods, nmt_log_prob_thresholds, dataset, 
         print(f"*************** FINAL BEST FOR METHOD {method}: best score {max_score}, best params {best_hyperparams}")
 
 
-def word_level_eval(task, dataset, data_root_path, src_lang, tgt_lang, perturbed_trans_df_path, word_level_eval_method,
+def word_level_eval(task, dataset, data_root_path, src_lang, tgt_lang, perturbed_trans_df_path,
+                    original_translation_output_dir, word_level_eval_method,
                     nmt_log_prob_threshold=0.5, effecting_words_threshold=2, consistence_trans_portion_threshold=0.8,
                     uniques_portion_for_noiseORperturbed_threshold=0.4,
                     no_effecting_words_portion_threshold=0.8):
@@ -487,7 +503,8 @@ def word_level_eval(task, dataset, data_root_path, src_lang, tgt_lang, perturbed
     if word_level_eval_method == 'nmt_log_prob':
         pred_labels = nmt_log_prob_eval(dataset, data_root_path, src_lang,
                                         tgt_lang, nmt_log_prob_threshold,
-                                        perturbed_trans_df_path, task=task)
+                                        perturbed_trans_df_path, task=task,
+                                        original_translation_output_dir=original_translation_output_dir)
     elif word_level_eval_method == 'nr_effecting_src_words':
         pred_labels = nr_effecting_src_words_eval(
             perturbed_trans_df_path, effecting_words_threshold,

@@ -123,10 +123,11 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
     # Binarize the data for faster translation
     fairseq-preprocess --srcdict $MODEL_DIR/dict.$SRC_LANG.txt --tgtdict $MODEL_DIR/dict.$TGT_LANG.txt --source-lang ${SRC_LANG} --target-lang ${TGT_LANG} --testpref $TMP/preprocessed.tok.bpe --destdir $TMP/bin --workers 4
     # Translate
-    fairseq-generate $TMP/bin --path ${MODEL_DIR}/${SRC_LANG}-${TGT_LANG}.pt --beam 5 --source-lang $SRC_LANG --target-lang $TGT_LANG --no-progress-bar --unkpen 5 --batch-size ${batch_size} > $TMP/fairseq.out
-    grep ^H $TMP/fairseq.out | cut -d- -f2- | sort -n | cut -f3- > $TMP/mt.out
+    fairseq-generate $TMP/bin --path ${MODEL_DIR}/${SRC_LANG}-${TGT_LANG}.pt --beam 5 --source-lang $SRC_LANG --target-lang $TGT_LANG --no-progress-bar --unkpen 5 --batch-size ${batch_size} > ${output_dir}/fairseq.out
+    grep ^H ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f3- > ${output_dir}/mt.out
+    grep ^P ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f2- > ${output_dir}/log_prob.out
     # Post-process
-    sed -r 's/(@@ )| (@@ ?$)//g' < $TMP/mt.out | sacremoses -l $TGT_LANG detokenize > $OUTPUT
+    sed -r 's/(@@ )| (@@ ?$)//g' < ${output_dir}/mt.out | sacremoses -l $TGT_LANG detokenize > $OUTPUT
     # Put the translation to the dataframe
     python -u QE_WMT21_format_utils.py \
       --func "format_translation_file" \

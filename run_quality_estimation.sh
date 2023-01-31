@@ -30,6 +30,9 @@ replacement_strategy="masking_language_model"
 number_of_replacement=30
 beam=5
 
+OUTPUT_dir=output/${dataname}_${trans_direction}
+output_dir_original_SRC=${OUTPUT_dir}/original
+
 for mask_type in ${mask_types[@]}; do
   df_root_path="output"
   analyse_output_path="analyse_output/${dataname}_${SRC_LANG}2${TGT_LANG}_${mask_type}"
@@ -95,6 +98,7 @@ for mask_type in ${mask_types[@]}; do
 
   python -u quality_estimation.py \
     --perturbed_trans_df_path ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${mask_type}.pkl \
+    --original_translation_output_dir ${output_dir_original_SRC} \
     --dataset ${dataname} \
     --data_root_path ${data_root_dir} \
     --src_lang ${SRC_LANG} \
