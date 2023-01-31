@@ -91,7 +91,7 @@ for mask_type in ${mask_types[@]}; do
     --output_dir ${analyse_output_path} \
     --tokenize_sentences "True" \
     --use_src_tgt_alignment ${use_src_tgt_alignment} \
-    --analyse_feature "highlight_changes" "edit_distance" "change_spread"
+    --analyse_feature "edit_distance" "change_spread"
 
   python -u quality_estimation.py \
     --perturbed_trans_df_path ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${mask_type}.pkl \
