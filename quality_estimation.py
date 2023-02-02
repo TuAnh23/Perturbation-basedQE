@@ -154,9 +154,11 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
                                 consistence_trans_portion_threshold=0.8,
                                 uniques_portion_for_noiseORperturbed_threshold=0.4,
                                 no_effecting_words_portion_threshold=0.8,
-                                keep_unknown=False):
+                                keep_unknown=False, return_details=False):
     """
     *_word_level_eval by using nr_effecting_src_words
+    return_details: if False, return only the word predicted tag. if True, also returns the list of SRC words that
+                    effect the translated words
     Returns:
         The flattened predictions
     """
@@ -168,6 +170,7 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
         raise RuntimeError('Unknown task')
 
     word_tag = []
+    details = []  # the effecting and no-effecting SRC words to every translated words
     perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
     SRC_original_indices = perturbed_trans_df['SRC_original_idx'].unique()
     for SRC_original_idx in SRC_original_indices:
@@ -189,10 +192,16 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
         # sentence_word_tags = ['OK' if x in ok_words else 'BAD' for x in range(0,
         #                       original_trans_length if task == 'trans_word_level_eval' else original_src_length)]
         word_tag.append(sentence_word_tags)
+        if return_details:
+            details.append(tgt_src_effects)
 
     if not keep_unknown:
         word_tag = replace_unknown(word_tag)
-    return word_tag
+
+    if return_details:
+        return word_tag, details
+    else:
+        return word_tag
 
 
 def get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang, original_translation_output_dir):
