@@ -263,7 +263,7 @@ def analyse_single_sentence_single_perturbed_word(sentence_perturbed_word_df, al
             portion_most_common_trans = count_unique_translated_words.iloc[0] / aligned_trans[col].count()
             most_common_trans = count_unique_translated_words.index[0]
 
-            original_trans = col if align_type == "trans-only" \
+            original_trans = word if align_type == "trans-only" \
                 else aligned_trans.iloc[0][col] if align_type == "src-trans" else None
 
             # trans_eval: one of the three values:
@@ -273,11 +273,11 @@ def analyse_single_sentence_single_perturbed_word(sentence_perturbed_word_df, al
                 # If there is one dominant translation
                 # and the translation of the original SRC is the same  as the dominant translation
                 # then the translation of this word is consistent
-                trans_eval = 'words_with_consistent_trans'
-                # if original_trans == most_common_trans:
-                #     trans_eval = 'words_with_consistent_trans'
-                # else:
-                #     trans_eval = 'words_with_unstable_trans'
+                # trans_eval = 'words_with_consistent_trans'
+                if original_trans == most_common_trans:
+                    trans_eval = 'words_with_consistent_trans'
+                else:
+                    trans_eval = 'words_with_unstable_trans'
             else:
                 # The case where there is no dominant translation
                 if nr_unique_words > uniques_portion_for_noiseORperturbed_threshold * aligned_trans[col].count():
