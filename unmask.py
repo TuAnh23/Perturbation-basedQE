@@ -46,6 +46,7 @@ def main():
     parser.add_argument('--grouped_mask', type=str_to_bool, default=False,
                         help='Whether the data is masked in the groupped setting, i.e., single word over multiple '
                              'sentences, and the replacement rank in across sentences')
+    parser.add_argument('--unmasking_model', type=str, default='bert-base-cased')
     args = parser.parse_args()
     print(args)
 
@@ -56,14 +57,15 @@ def main():
     LOGGER.debug("Loading word embedding / language masking model")
     if args.replacement_strategy == 'word2vec_similarity':
         word_replacement_model = api.load('glove-wiki-gigaword-100')
-    elif args.replacement_strategy == 'masking_language_model':
+    elif args.replacement_strategy.startswith('masking_language_model'):
         if torch.cuda.is_available():
             gpu = 0
         else:
-            print('No GPU available, using  CPU instead.')
+            print('No GPU available, using CPU instead.')
             gpu = -1
 
-        word_replacement_model = pipeline('fill-mask', model='bert-base-cased', device=gpu)
+        word_replacement_model = pipeline('fill-mask', model=args.unmasking_model, device=gpu)
+
     else:
         raise RuntimeError(f"Replacement strategy {args.replacement_strategy} not available.")
 
@@ -93,8 +95,14 @@ def replace_mask_single_group(masked_src_df, replacement_strategy, number_of_rep
     replacement_strategy=='masking_language_model'
     :return: unmasked sentences
     """
+    MASK_TOKEN = '[MASK]'
+    if replacement_strategy.startswith('masking_language_model'):
+        # Different unmasking model could have different mask token ('[MASK]' or '<mask>')
+        # Have to adapt the data
+        MASK_TOKEN = replacement_model.tokenizer.mask_token
+        masked_src_df['SRC_masked'] = masked_src_df['SRC_masked'].apply(lambda x: x.replace('[MASK]', MASK_TOKEN))
 
-    if replacement_strategy != 'masking_language_model':
+    if not replacement_strategy.startswith('masking_language_model'):
         raise RuntimeError(f"Replacement strategy {replacement_strategy} not available.")
 
     count_original_word = masked_src_df['original_word'].value_counts()
@@ -164,7 +172,7 @@ def replace_mask_single_group(masked_src_df, replacement_strategy, number_of_rep
             unmasked_row['Replacement_rank_within_sentence'] = replacement_df_rank.loc[
                 replacement, sentence_row['SRC_masked_index']]
             unmasked_row['perturbed_word'] = replacement
-            unmasked_row['SRC_perturbed'] = sentence_row['SRC_masked'].replace('[MASK]', replacement)
+            unmasked_row['SRC_perturbed'] = sentence_row['SRC_masked'].replace(MASK_TOKEN, replacement)
             output_df = pd.concat([output_df, unmasked_row.to_frame().T])
 
     return output_df
@@ -209,6 +217,13 @@ def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, rep
         replacement_strategy=='masking_language_model'
         :return: (an) unmasked sentence(s)
     """
+    MASK_TOKEN = '[MASK]'
+    if replacement_strategy.startswith('masking_language_model'):
+        # Different unmasking model could have different mask token ('[MASK]' or '<mask>')
+        # Have to adapt the data
+        MASK_TOKEN = replacement_model.tokenizer.mask_token
+        masked_src_df['SRC_masked'] = masked_src_df['SRC_masked'].apply(lambda x: x.replace('[MASK]', MASK_TOKEN))
+
     # Unmask all sentences, save raw unmasking value from the bert model
     # Do not do it within the loop for better GPU efficiency
     masked_dataset = MaskedSentencesDataset(masked_src_df['SRC_masked'].values)
@@ -222,7 +237,7 @@ def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, rep
         unmasked_row = row.copy()
         masked_word = unmasked_row['original_word']
 
-        if replacement_strategy == 'masking_language_model':
+        if replacement_strategy.startswith('masking_language_model'):
             pred = row['raw_unmasks_bert']
 
             # Choose the most probable word, if it is not the same as the original word (ignoring case and word form)

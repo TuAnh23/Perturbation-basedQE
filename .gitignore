@@ -19,3 +19,7 @@ notebooks/tmp_storages/*
 .tmp.driveupload/*
 
 *.log
+
+tercom-0.7.25/*
+
+*.tgz

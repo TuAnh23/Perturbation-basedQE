@@ -3,10 +3,21 @@ Used in the case of `MultiplePerSentence` perturbation. I.e., perturb multiple w
 with different replacements
 Containing functions to align the different translations and analyse on which words have unstable translation,...
 """
+import codecs
+import os.path
+import subprocess
+import tarfile
+import tempfile
+import time
 
 import pandas as pd
 import nltk
 import edist.sed as sed
+import requests
+import collect_tercom_alignments
+from xml.sax.saxutils import escape
+from multiprocessing import Pool, cpu_count
+from itertools import repeat
 
 
 def cast_to_index(string_index):
@@ -24,7 +35,9 @@ def cast_to_index(string_index):
 
 def edist_alignment(tokenized_sentence1, tokenized_sentence2):
     """
-    Return the list of tuples of aligned indices
+    Return the list of tuples of aligned indices.
+    Use Levenshtein distance
+    https://pypi.org/project/edist/
     """
 
     alignment = sed.standard_sed_backtrace(tokenized_sentence1, tokenized_sentence2)
@@ -34,6 +47,58 @@ def edist_alignment(tokenized_sentence1, tokenized_sentence2):
     alignment = [(cast_to_index(x[0]), cast_to_index(x[1])) for x in alignment]
 
     return alignment
+
+
+def tercom_alignment(tokenized_original_sentences, tokenized_changed_sentences):
+    """
+    Return the list of list of tuples of aligned indices.
+    Use tercom alignment, which is also used to calculate TER
+    Original project: https://github.com/jhclark/tercom
+    Usage code borrow from Unbabel: https://github.com/Unbabel/word-level-qe-corpus-builder
+    (files edit_alignments.py, parse_pra_xml.py with slight modifications)
+    """
+    # Download tercom execution jar file if not yet exists
+    jar_path = "tercom-0.7.25/tercom.7.25.jar"
+    if not os.path.isfile(jar_path):
+        response = requests.get("http://www.cs.umd.edu/~snover/tercom//tercom-0.7.25.tgz")
+        with open("tercom-0.7.25.tgz", "wb") as f:
+            f.write(response.content)
+
+        # Unzip the data
+        tar = tarfile.open("tercom-0.7.25.tgz", "r:gz")
+        tar.extractall('./')
+        tar.close()
+
+    # Perform alignment
+    # First write formatted sentences to file
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        format_tercom(tokenized_sentences=tokenized_original_sentences,
+                      out_file=f"{tmpdirname}/tokenized_original_sentences.txt")
+        format_tercom(tokenized_sentences=tokenized_changed_sentences,
+                      out_file=f"{tmpdirname}/tokenized_changed_sentences.txt")
+
+        bashCommand = f"java -jar {jar_path} " \
+                      f"-r {tmpdirname}/tokenized_original_sentences.txt " \
+                      f"-h {tmpdirname}/tokenized_changed_sentences.txt " \
+                      f"-n {tmpdirname}/out " \
+                      f"-d 0 " \
+                      f"> {tmpdirname}/tercom.log"
+        process = subprocess.run(bashCommand, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = collect_tercom_alignments.format_output(in_tercom_xml=f"{tmpdirname}/out.xml",
+                                                         mt_original=tokenized_changed_sentences,
+                                                         pe_original=tokenized_original_sentences)
+    return result
+
+
+def format_tercom(tokenized_sentences, out_file):
+    with codecs.open(out_file, 'w', "utf-8") as f:
+        for index, tokenized_sentence in enumerate(tokenized_sentences):
+            line = ' '.join(tokenized_sentence)
+            # Note that HTML compatible escaping is needed
+            line = escape(line)
+            # We also need to escape double quotes
+            line = line.replace('"', '\\"')
+            f.write(f"{line}\t({index})\n")
 
 
 def reorder_according_to_alignment(tokenized_sentence1, tokenized_sentence2, alignment):
@@ -111,7 +176,8 @@ def align_src_tgt_translations(sentence_df):
     original_word_index = original_src_tokenized.index(original_word)
 
     result_df = pd.DataFrame(
-        index=[original_word] + sentence_df['perturbed_word'].tolist(),  # original translation meant to be in the first row
+        index=[original_word] + sentence_df['perturbed_word'].tolist(),
+        # original translation meant to be in the first row
         columns=original_src_tokenized,
         # columns=['[MASK]' if i == original_word_index else original_src_tokenized[i]
         #          for i in range(len(original_src_tokenized))]
@@ -139,13 +205,14 @@ def align_src_tgt_translations(sentence_df):
     return result_df
 
 
-def align_translations_tgt_only(sentence_df):
+def align_translations_tgt_only(sentence_df, alignment_tool='Levenshtein'):
     """
     Single sentence, single perturbed word, different replacements.
     Align different translations of the perturbed sentences to the original translation.
     Args:
         sentence_df: the dataframe containing the different translations of
             (Single sentence, single perturbed word, different replacements)
+        alignment_tool: Levenshtein or Tercom
     Returns:
         result_df: the column labels are the tokenized original translation
             the row labels are the different replacements of the perturbed word
@@ -154,19 +221,31 @@ def align_translations_tgt_only(sentence_df):
     original_trans_tokenized = sentence_df['tokenized_SRC-Trans'].values[0]
 
     result_df = pd.DataFrame(
-        index=[original_word] + sentence_df['perturbed_word'].tolist(), # original translation meant to be in the first row
+        index=[original_word] + sentence_df['perturbed_word'].tolist(),
+        # original translation meant to be in the first row
         columns=original_trans_tokenized
     )
 
     # Add the original translation in the first row
     result_df.iloc[0] = original_trans_tokenized
 
+    # Perform alignments at once for efficiency
+    alignments = []
+    perturbed_trans_tokenized_list = sentence_df['tokenized_SRC_perturbed-Trans'].tolist()
+    original_trans_tokenized_list = [original_trans_tokenized] * len(perturbed_trans_tokenized_list)
+    if alignment_tool == 'Levenshtein':
+        for s1, s2 in zip(original_trans_tokenized_list, perturbed_trans_tokenized_list):
+            alignments.append(edist_alignment(s1, s2))
+    elif alignment_tool == 'Tercom':
+        alignments = tercom_alignment(original_trans_tokenized_list, perturbed_trans_tokenized_list)
+    else:
+        raise RuntimeError(f"alignment_tool {alignment_tool} not available.")
+
     # Add the perturbed translation
     result_df_i_row = 1
-    for index, row in sentence_df.iterrows():
-        alignment = edist_alignment(original_trans_tokenized, row['tokenized_SRC_perturbed-Trans'])
+    for index, (_, row) in enumerate(sentence_df.iterrows()):
         result_df.iloc[result_df_i_row] = reorder_according_to_alignment(
-            original_trans_tokenized, row['tokenized_SRC_perturbed-Trans'], alignment
+            original_trans_tokenized, row['tokenized_SRC_perturbed-Trans'], alignments[result_df_i_row-1]
         )
         result_df_i_row = result_df_i_row + 1
 
@@ -176,7 +255,7 @@ def align_translations_tgt_only(sentence_df):
     return result_df
 
 
-def align_translations(sentence_df, align_type="src-trans"):
+def align_translations(sentence_df, align_type="src-trans", alignment_tool='Levenshtein'):
     """
     Single sentence, single perturbed word, different replacements.
     Params:
@@ -194,7 +273,7 @@ def align_translations(sentence_df, align_type="src-trans"):
     if align_type == "src-trans":
         return align_src_tgt_translations(sentence_df)
     elif align_type == "trans-only":
-        return align_translations_tgt_only(sentence_df)
+        return align_translations_tgt_only(sentence_df, alignment_tool=alignment_tool)
     else:
         raise RuntimeError('Invalid alignment type')
 
@@ -202,7 +281,8 @@ def align_translations(sentence_df, align_type="src-trans"):
 def analyse_single_sentence_single_perturbed_word(sentence_perturbed_word_df, align_type="trans-only",
                                                   filter_content_word=False, return_word_index=False,
                                                   consistence_trans_portion_threshold=0.8,
-                                                  uniques_portion_for_noiseORperturbed_threshold=0.4):
+                                                  uniques_portion_for_noiseORperturbed_threshold=0.4,
+                                                  alignment_tool='Levenshtein'):
     """
     Single sentence, single perturbed word, different replacements.
     Analyse each word in the original SRC (if align_type=="src-trans")
@@ -231,7 +311,7 @@ def analyse_single_sentence_single_perturbed_word(sentence_perturbed_word_df, al
     nr_replacements = sentence_perturbed_word_df.shape[0] if align_type == "trans-only" \
         else sentence_perturbed_word_df.shape[0] + 1 if align_type == "src-trans" else None
 
-    aligned_trans = align_translations(sentence_perturbed_word_df, align_type=align_type)
+    aligned_trans = align_translations(sentence_perturbed_word_df, align_type=align_type, alignment_tool=alignment_tool)
 
     result = {'perturbed_or_noise_words': [],
               'words_with_unstable_trans': {},
@@ -314,7 +394,8 @@ def analyse_single_sentence(sentence_df,
                             filter_content_word=False,
                             return_word_index=False,
                             consistence_trans_portion_threshold=0.8,
-                            uniques_portion_for_noiseORperturbed_threshold=0.4
+                            uniques_portion_for_noiseORperturbed_threshold=0.4,
+                            alignment_tool='Levenshtein',
                             ):
     """
     Single sentence, different perturbed words, different replacements.
@@ -337,21 +418,42 @@ def analyse_single_sentence(sentence_df,
     count_original_sentence_idx = sentence_df['SRC_original_idx'].value_counts()
     assert count_original_sentence_idx.shape[0] == 1  # Because this function is for a single group
 
-    groups_by_perturbed_word = sentence_df.groupby("SRC_masked_index", as_index=False)
+    groups_by_perturbed_word = sentence_df[["SRC_masked_index", 'tokenized_SRC', 'tokenized_SRC-Trans', 'original_word',
+                                            'perturbed_word', 'tokenized_SRC_perturbed-Trans']].\
+        groupby("SRC_masked_index", as_index=False)
 
     collect_results = {}
     original_words = [group_by_perturbed_word.iloc[0]['original_word']
                       for _, group_by_perturbed_word in groups_by_perturbed_word]
     groups_by_perturbed_word = [group_by_perturbed_word for _, group_by_perturbed_word in groups_by_perturbed_word]
-    original_words = uniquify(original_words)
-    for original_word, group_by_perturbed_word in zip(original_words, groups_by_perturbed_word):
-        collect_results[original_word] = analyse_single_sentence_single_perturbed_word(group_by_perturbed_word,
-                                                                                       align_type=align_type,
-                                                                                       filter_content_word=filter_content_word,
-                                                                                       return_word_index=return_word_index,
-                                                                                       consistence_trans_portion_threshold=consistence_trans_portion_threshold,
-                                                                                       uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold
-                                                                                       )
+    original_words = list(uniquify(original_words))
+    if alignment_tool == "Tercom":
+        # This is slow, so we use multiprocessing
+        num_processes = cpu_count() - 1 if cpu_count() > 1 else cpu_count()
+        with Pool(num_processes) as pool:
+            results = pool.starmap(analyse_single_sentence_single_perturbed_word,
+                                   zip(groups_by_perturbed_word,
+                                       repeat(align_type),
+                                       repeat(filter_content_word),
+                                       repeat(return_word_index),
+                                       repeat(consistence_trans_portion_threshold),
+                                       repeat(uniques_portion_for_noiseORperturbed_threshold),
+                                       repeat(alignment_tool)))
+        for i in range(len(original_words)):
+            collect_results[original_words[i]] = results[i]
+    elif alignment_tool == 'Levenshtein':
+        for original_word, group_by_perturbed_word in zip(original_words, groups_by_perturbed_word):
+            collect_results[original_word] = analyse_single_sentence_single_perturbed_word(
+                group_by_perturbed_word,
+                align_type=align_type,
+                filter_content_word=filter_content_word,
+                return_word_index=return_word_index,
+                consistence_trans_portion_threshold=consistence_trans_portion_threshold,
+                uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold,
+                alignment_tool=alignment_tool
+            )
+    else:
+        raise RuntimeError(f"alignment_tool {alignment_tool} not available.")
 
     # For all words, find the perturbed words that makes its trans ambiguous,
     # and the perturbed words that makes its trans consistence

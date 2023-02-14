@@ -154,7 +154,8 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
                                 consistence_trans_portion_threshold=0.8,
                                 uniques_portion_for_noiseORperturbed_threshold=0.4,
                                 no_effecting_words_portion_threshold=0.8,
-                                keep_unknown=False, return_details=False):
+                                keep_unknown=False, return_details=False,
+                                alignment_tool='Levenshtein'):
     """
     *_word_level_eval by using nr_effecting_src_words
     return_details: if False, return only the word predicted tag. if True, also returns the list of SRC words that
@@ -181,7 +182,8 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
             sentence_df,
             align_type=align_type, return_word_index=True,
             consistence_trans_portion_threshold=consistence_trans_portion_threshold,
-            uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold
+            uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold,
+            alignment_tool=alignment_tool,
         )
         bad_words = find_bad_word(tgt_src_effects, effecting_words_threshold)
         # ok_words = find_ok_word(tgt_src_effects,
@@ -374,6 +376,8 @@ def main():
                              "Provide a list of options for hyperparams tuning."
                              "E.g., [0.4, 0.5, 0.6, 0.7, 0.8, 0.9]",
                         default=[0.6])
+    parser.add_argument('--alignment_tool', type=str, choices=['Levenshtein', 'Tercom'], default='Levenshtein',
+                        help="Tercom is much slower.")
 
     args = parser.parse_args()
     print(args)
@@ -394,7 +398,8 @@ def main():
                                          consistence_trans_portion_thresholds=args.consistence_trans_portion_thresholds,
                                          uniques_portion_for_noiseORperturbed_thresholds=args.uniques_portion_for_noiseORperturbed_thresholds,
                                          no_effecting_words_portion_thresholds=args.no_effecting_words_portion_thresholds,
-                                         task=task)
+                                         task=task,
+                                         alignment_tool=args.alignment_tool)
 
     if args.src_word_level_eval:
         task = 'src_word_level_eval'
@@ -410,7 +415,8 @@ def main():
                                          consistence_trans_portion_thresholds=args.consistence_trans_portion_thresholds,
                                          uniques_portion_for_noiseORperturbed_thresholds=args.uniques_portion_for_noiseORperturbed_thresholds,
                                          no_effecting_words_portion_thresholds=args.no_effecting_words_portion_thresholds,
-                                         task=task)
+                                         task=task,
+                                         alignment_tool=args.alignment_tool)
 
     if args.sentence_level_eval_da:
         perturbed_trans_df = pd.read_pickle(args.perturbed_trans_df_path)
@@ -427,7 +433,8 @@ def main():
                                                       task='trans_word_level_eval',
                                                       consistence_trans_portion_threshold=args.consistence_trans_portion_threshold,
                                                       uniques_portion_for_noiseORperturbed_threshold=args.uniques_portion_for_noiseORperturbed_threshold,
-                                                      no_effecting_words_portion_threshold=args.no_effecting_words_portion_threshold)
+                                                      no_effecting_words_portion_threshold=args.no_effecting_words_portion_threshold,
+                                                      alignment_tool=args.alignment_tool)
         approximations['word_level_agg'] = [x.count('BAD') for x in word_level_tags]
 
         for col in approximations.columns:
@@ -452,7 +459,8 @@ def hyperparams_tune_word_level_eval(methods, nmt_log_prob_thresholds, dataset, 
                                      consistence_trans_portion_thresholds,
                                      uniques_portion_for_noiseORperturbed_thresholds,
                                      no_effecting_words_portion_thresholds,
-                                     task):
+                                     task,
+                                     alignment_tool='Levenshtein'):
     print("---------------------------------------")
     print(f"Hyperparams tuning for task {task}")
     for method in methods:
@@ -489,7 +497,8 @@ def hyperparams_tune_word_level_eval(methods, nmt_log_prob_thresholds, dataset, 
                                                           effecting_words_threshold=effecting_words_threshold,
                                                           consistence_trans_portion_threshold=consistence_trans_portion_threshold,
                                                           uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold,
-                                                          no_effecting_words_portion_threshold=no_effecting_words_portion_threshold
+                                                          no_effecting_words_portion_threshold=no_effecting_words_portion_threshold,
+                                                          alignment_tool=alignment_tool
                                                           )
                 print(f"\t\tchoice_tuple: {choice_tuple}")
                 print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
@@ -506,7 +515,8 @@ def word_level_eval(task, dataset, data_root_path, src_lang, tgt_lang, perturbed
                     original_translation_output_dir, word_level_eval_method,
                     nmt_log_prob_threshold=0.5, effecting_words_threshold=2, consistence_trans_portion_threshold=0.8,
                     uniques_portion_for_noiseORperturbed_threshold=0.4,
-                    no_effecting_words_portion_threshold=0.8):
+                    no_effecting_words_portion_threshold=0.8,
+                    alignment_tool='Levenshtein'):
     gold_labels = load_gold_labels(dataset, data_root_path, src_lang, tgt_lang,
                                    task=task)
     if word_level_eval_method == 'nmt_log_prob':
@@ -520,7 +530,8 @@ def word_level_eval(task, dataset, data_root_path, src_lang, tgt_lang, perturbed
             task=task,
             consistence_trans_portion_threshold=consistence_trans_portion_threshold,
             uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold,
-            no_effecting_words_portion_threshold=no_effecting_words_portion_threshold
+            no_effecting_words_portion_threshold=no_effecting_words_portion_threshold,
+            alignment_tool=alignment_tool
         )
     else:
         raise RuntimeError(f"Method {word_level_eval_method} not available for task {task}.")

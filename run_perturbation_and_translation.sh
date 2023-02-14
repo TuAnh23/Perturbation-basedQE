@@ -4,24 +4,50 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
 nvidia-smi
 
-dataname="WMT21_DA_test"
+if [ -z "$1" ]; then
+  dataname="WMT21_DA_dev"
+else
+  dataname=$1
+fi
+
+if [ -z "$2" ]; then
+  SRC_LANG="en"
+else
+  SRC_LANG=$2
+fi
+
+if [ -z "$3" ]; then
+  TGT_LANG="de"
+else
+  TGT_LANG=$3
+fi
+
+if [ -z "$4" ]; then
+  mask_type="MultiplePerSentence_content"  # "MultiplePerSentence_content" "MultiplePerSentence_allWords" "MultiplePerSentence_allTokens" )
+else
+  mask_type=$4
+fi
+
+if [ -z "$5" ]; then
+  unmasking_model='bert-base-cased'
+else
+  unmasking_model=$5
+fi
+
 qe_wmt21="True"
-SRC_LANG="en"
-TGT_LANG="de"
-mask_type="MultiplePerSentence_content"
 dev=False
 grouped_mask=False
 trans_direction="${SRC_LANG}2${TGT_LANG}"
 data_root_dir="data"
 batch_size=100
 seed=0
-replacement_strategy="masking_language_model"
+replacement_strategy="masking_language_model_${unmasking_model}"
 number_of_replacement=30
 beam=5
 
@@ -45,6 +71,13 @@ output_dir_original_SRC=${OUTPUT_dir}/original
 output_dir_perturbed_SRC=${OUTPUT_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/${number_of_replacement}replacements/seed${seed}
 TMP_dir_original_SRC=${TMP_dir}/original
 TMP_dir_perturbed_SRC=${TMP_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/${number_of_replacement}replacements/seed${seed}
+
+#rm -r $output_dir_perturbed_SRC
+if [ -d "$output_dir_perturbed_SRC" ]; then
+  echo "Output files exists. Skip perturbation and translation."
+  exit 0
+fi
+
 mkdir -p ${output_dir_original_SRC}
 mkdir -p ${output_dir_perturbed_SRC}
 mkdir -p ${TMP_dir_original_SRC}
@@ -77,7 +110,8 @@ python -u unmask.py \
   --output_dir ${output_dir_perturbed_SRC} \
   --replacement_strategy ${replacement_strategy} \
   --number_of_replacement ${number_of_replacement} \
-  --grouped_mask ${grouped_mask}
+  --grouped_mask ${grouped_mask} \
+  --unmasking_model ${unmasking_model}
 
 # Translate original and perturbed sentences
 declare -a input_SRC_columns=("SRC" "SRC_perturbed" )
@@ -87,6 +121,11 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
     output_dir=${output_dir_original_SRC}
     TMP=${TMP_dir_original_SRC}
     input_src_path=${output_dir_original_SRC}/src_df.csv
+
+    if [ -d "$output_dir" ]; then
+      continue
+    fi
+
   else
     output_dir=${output_dir_perturbed_SRC}
     TMP=${TMP_dir_perturbed_SRC}

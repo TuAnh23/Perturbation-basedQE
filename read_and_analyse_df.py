@@ -571,7 +571,8 @@ def main():
     parser.add_argument('--src_lang', type=str, default="en")
     parser.add_argument('--tgt_lang', type=str, default="de")
     parser.add_argument('--replacement_strategy', type=str, default='word2vec_similarity',
-                        help='[word2vec_similarity|masking_language_model]. The later option is context-based.')
+                        help='[word2vec_similarity|masking_language_model_{unmasking_model}]. '
+                             'The later option is context-based.')
     parser.add_argument('--number_of_replacement', type=int, default=5,
                         help='The number of replacement for 1 SRC word')
     parser.add_argument('--dataname', type=str)
