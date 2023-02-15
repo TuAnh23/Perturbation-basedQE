@@ -230,16 +230,19 @@ def align_translations_tgt_only(sentence_df, alignment_tool='Levenshtein'):
     result_df.iloc[0] = original_trans_tokenized
 
     # Perform alignments at once for efficiency
-    alignments = []
-    perturbed_trans_tokenized_list = sentence_df['tokenized_SRC_perturbed-Trans'].tolist()
-    original_trans_tokenized_list = [original_trans_tokenized] * len(perturbed_trans_tokenized_list)
-    if alignment_tool == 'Levenshtein':
-        for s1, s2 in zip(original_trans_tokenized_list, perturbed_trans_tokenized_list):
-            alignments.append(edist_alignment(s1, s2))
-    elif alignment_tool == 'Tercom':
-        alignments = tercom_alignment(original_trans_tokenized_list, perturbed_trans_tokenized_list)
+    if 'trans-only-alignment' not in sentence_df.columns:
+        alignments = []
+        perturbed_trans_tokenized_list = sentence_df['tokenized_SRC_perturbed-Trans'].tolist()
+        original_trans_tokenized_list = [original_trans_tokenized] * len(perturbed_trans_tokenized_list)
+        if alignment_tool == 'Levenshtein':
+            for s1, s2 in zip(original_trans_tokenized_list, perturbed_trans_tokenized_list):
+                alignments.append(edist_alignment(s1, s2))
+        elif alignment_tool == 'Tercom':
+            alignments = tercom_alignment(original_trans_tokenized_list, perturbed_trans_tokenized_list)
+        else:
+            raise RuntimeError(f"alignment_tool {alignment_tool} not available.")
     else:
-        raise RuntimeError(f"alignment_tool {alignment_tool} not available.")
+        alignments = sentence_df['trans-only-alignment'].tolist()
 
     # Add the perturbed translation
     result_df_i_row = 1
@@ -418,16 +421,14 @@ def analyse_single_sentence(sentence_df,
     count_original_sentence_idx = sentence_df['SRC_original_idx'].value_counts()
     assert count_original_sentence_idx.shape[0] == 1  # Because this function is for a single group
 
-    groups_by_perturbed_word = sentence_df[["SRC_masked_index", 'tokenized_SRC', 'tokenized_SRC-Trans', 'original_word',
-                                            'perturbed_word', 'tokenized_SRC_perturbed-Trans']].\
-        groupby("SRC_masked_index", as_index=False)
+    groups_by_perturbed_word = sentence_df.groupby("SRC_masked_index", as_index=False)
 
     collect_results = {}
     original_words = [group_by_perturbed_word.iloc[0]['original_word']
                       for _, group_by_perturbed_word in groups_by_perturbed_word]
     groups_by_perturbed_word = [group_by_perturbed_word for _, group_by_perturbed_word in groups_by_perturbed_word]
     original_words = list(uniquify(original_words))
-    if alignment_tool == "Tercom":
+    if alignment_tool == "Tercom" and align_type == "trans-only" and 'trans-only-alignment' not in sentence_df.columns:
         # This is slow, so we use multiprocessing
         num_processes = cpu_count() - 1 if cpu_count() > 1 else cpu_count()
         with Pool(num_processes) as pool:
@@ -441,7 +442,7 @@ def analyse_single_sentence(sentence_df,
                                        repeat(alignment_tool)))
         for i in range(len(original_words)):
             collect_results[original_words[i]] = results[i]
-    elif alignment_tool == 'Levenshtein':
+    else:
         for original_word, group_by_perturbed_word in zip(original_words, groups_by_perturbed_word):
             collect_results[original_word] = analyse_single_sentence_single_perturbed_word(
                 group_by_perturbed_word,
@@ -452,8 +453,6 @@ def analyse_single_sentence(sentence_df,
                 uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold,
                 alignment_tool=alignment_tool
             )
-    else:
-        raise RuntimeError(f"alignment_tool {alignment_tool} not available.")
 
     # For all words, find the perturbed words that makes its trans ambiguous,
     # and the perturbed words that makes its trans consistence

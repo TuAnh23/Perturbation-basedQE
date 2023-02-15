@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.metrics import matthews_corrcoef
 import argparse
 from utils import str_to_bool, set_seed
-from align_and_analyse_ambiguous_trans import analyse_single_sentence
+from align_and_analyse_ambiguous_trans import analyse_single_sentence, tercom_alignment, edist_alignment
 from scipy.stats import zscore
 from scipy.stats import pearsonr, spearmanr
 from collections import defaultdict
@@ -173,6 +173,18 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
     word_tag = []
     details = []  # the effecting and no-effecting SRC words to every translated words
     perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
+
+    # Perform alignment here at once for efficiency
+    original_trans_tokenized = perturbed_trans_df['tokenized_SRC-Trans'].tolist()
+    perturbed_trans_tokenized = perturbed_trans_df['tokenized_SRC_perturbed-Trans'].tolist()
+    if alignment_tool == 'Levenshtein':
+        aligments = [edist_alignment(s1, s2) for s1, s2 in zip(original_trans_tokenized, perturbed_trans_tokenized)]
+    elif alignment_tool == 'Tercom':
+        aligments = tercom_alignment(original_trans_tokenized, perturbed_trans_tokenized)
+    else:
+        raise RuntimeError(f"Unknown alignment tool {alignment_tool}")
+    perturbed_trans_df['trans-only-alignment'] = aligments
+
     SRC_original_indices = perturbed_trans_df['SRC_original_idx'].unique()
     for SRC_original_idx in SRC_original_indices:
         sentence_df = perturbed_trans_df[perturbed_trans_df['SRC_original_idx'] == SRC_original_idx]
@@ -229,17 +241,96 @@ def get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang, original
         tokenized_translations = [tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
                                   for x in translations]
 
-    with open(subwords_path, 'r') as f:
-        subwords = f.readlines()
-        subwords = [line.replace('\n', '').split() for line in subwords]
+    subwords = load_subwords_from_file(subwords_path)
+    subword_log_probs = load_subword_log_probs_from_file(subword_log_probs_path)
 
+    word_log_probs = merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs, tokenized_translations)
+    return word_log_probs
+
+
+def load_subword_log_probs_from_file(subword_log_probs_path):
     with open(subword_log_probs_path, 'r') as f:
         subword_log_probs = f.readlines()
         subword_log_probs = [line.replace('\n', '').split() for line in subword_log_probs]
         # Cast all values to float
         subword_log_probs = [[float(x) for x in y] for y in subword_log_probs]
+    return subword_log_probs
 
+
+def load_subwords_from_file(subwords_path):
+    with open(subwords_path, 'r') as f:
+        subwords = f.readlines()
+        subwords = [line.replace('\n', '').split() for line in subwords]
+    return subwords
+
+
+def get_nmt_word_log_probs_avg_perturbed(dataset, data_root_path, src_lang, tgt_lang, original_translation_output_dir,
+                                         perturbed_translation_output_dir, perturbed_trans_df_path,
+                                         alignment_tool='Levenshtein'):
+    """
+    Align the perturbed translations with the original translation, and take the average of the log probabilities of all
+    aligned words in the perturbed translations with each original word.
+
+    """
+    original_word_log_probs = get_nmt_word_log_probs(
+        dataset, data_root_path, src_lang, tgt_lang, original_translation_output_dir
+    )
+
+    all_perturbed_word_log_probs = get_nmt_word_log_probs_perturbed(perturbed_translation_output_dir,
+                                                                    perturbed_trans_df_path)
+
+    perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
+    # Perform alignment
+    original_trans_tokenized = perturbed_trans_df['tokenized_SRC-Trans'].tolist()
+    perturbed_trans_tokenized = perturbed_trans_df['tokenized_SRC_perturbed-Trans'].tolist()
+    if alignment_tool == 'Levenshtein':
+        aligments = [edist_alignment(s1, s2) for s1, s2 in zip(original_trans_tokenized, perturbed_trans_tokenized)]
+    elif alignment_tool == 'Tercom':
+        aligments = tercom_alignment(original_trans_tokenized, perturbed_trans_tokenized)
+    else:
+        raise RuntimeError(f"Unknown alignment tool {alignment_tool}")
+
+    # Collect the probs
+    perturbed_count_per_sentence = perturbed_trans_df.groupby('SRC_original_idx').size()
+    pertubed_i = 0
+    avg_perturbed_log_probs = []
+    for sentence_i in perturbed_count_per_sentence.index:
+        avg_perturbed_log_probs_per_sentence = []
+        aligments_per_sentence = aligments[
+                                 pertubed_i:pertubed_i+perturbed_count_per_sentence[sentence_i]
+                                 ]
+        perturbed_word_log_probs_per_sentence = all_perturbed_word_log_probs[
+                                                pertubed_i:pertubed_i+perturbed_count_per_sentence[sentence_i]
+                                                ]
+        pertubed_i = pertubed_i + perturbed_count_per_sentence[sentence_i]
+
+        for word_i in range(len(original_word_log_probs[sentence_i])):
+            log_probs = [original_word_log_probs[sentence_i][word_i]]
+            for pertubed_i_per_sentence in range(len(aligments_per_sentence)):
+                if word_i not in dict(aligments_per_sentence[pertubed_i_per_sentence]).keys()\
+                        or pd.isna(dict(aligments_per_sentence[pertubed_i_per_sentence])[word_i]):
+                    continue
+                log_probs.append(
+                    perturbed_word_log_probs_per_sentence[pertubed_i_per_sentence][
+                        dict(aligments_per_sentence[pertubed_i_per_sentence])[word_i]
+                    ]
+                )
+            avg_perturbed_log_probs_per_sentence.append(np.mean(np.array(log_probs)))
+        avg_perturbed_log_probs.append(avg_perturbed_log_probs_per_sentence)
+
+    return avg_perturbed_log_probs
+
+
+def get_nmt_word_log_probs_perturbed(perturbed_translation_output_dir, perturbed_trans_df_path):
+    subwords_path = f"{perturbed_translation_output_dir}/mt.out"
+    subword_log_probs_path = f"{perturbed_translation_output_dir}/log_prob.out"
+
+    perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
+    tokenized_translations = perturbed_trans_df['tokenized_SRC_perturbed-Trans'].tolist()
+    subwords = load_subwords_from_file(subwords_path)
+    subword_log_probs = load_subword_log_probs_from_file(subword_log_probs_path)
     word_log_probs = merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs, tokenized_translations)
+
     return word_log_probs
 
 
