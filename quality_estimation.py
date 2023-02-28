@@ -467,8 +467,7 @@ def main():
                              "Provide a list of options for hyperparams tuning."
                              "E.g., [0.4, 0.5, 0.6, 0.7, 0.8, 0.9]",
                         default=[0.6])
-    parser.add_argument('--alignment_tool', type=str, choices=['Levenshtein', 'Tercom'], default='Levenshtein',
-                        help="Tercom is much slower.")
+    parser.add_argument('--alignment_tool', type=str, choices=['Levenshtein', 'Tercom'], default='Tercom')
 
     args = parser.parse_args()
     print(args)

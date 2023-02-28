@@ -463,9 +463,9 @@ def read_output_df(df_root_path, data_root_path, dataset, src_lang, tgt_lang, ma
     cols = first_cols + [col for col in output_df.columns if col not in first_cols]
     output_df = output_df[cols]
 
-    print(f"Original df shape: {output_df.shape}")
-    output_df = output_df.dropna()
-    print(f"After dropping none-perturbed sentences: {output_df.dropna().shape}")
+    # print(f"Original df shape: {output_df.shape}")
+    # output_df = output_df.dropna()
+    # print(f"After dropping none-perturbed sentences: {output_df.dropna().shape}")
 
     # ------------------------------------------- Analyse features -------------------------------------------
     if len(analyse_feature) > 0:

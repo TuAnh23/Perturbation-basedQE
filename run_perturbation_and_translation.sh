@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=5
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
@@ -122,7 +122,7 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
     TMP=${TMP_dir_original_SRC}
     input_src_path=${output_dir_original_SRC}/src_df.csv
 
-    if [ -d "$output_dir" ]; then
+    if [ -f "${output_dir}/translations.csv" ]; then
       continue
     fi
 
