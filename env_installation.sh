@@ -20,3 +20,6 @@ pip install spacy
 python3 -m spacy download en_core_web_sm
 python3 -m spacy download de_core_news_sm
 pip install edist
+pip install jieba==0.42.1
+pip install fugashi==1.1.1
+pip install indic-nlp-library==0.81

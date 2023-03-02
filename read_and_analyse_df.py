@@ -1,7 +1,12 @@
 """
 Read in an output translations df and optionally analyse it (by appending columns to the df itself)
 """
+import re
+import subprocess
+import sys
 
+import fugashi
+import jieba
 import pandas as pd
 from difflib import SequenceMatcher
 import os
@@ -330,6 +335,95 @@ def fix_tokenization(tokenized_sentence):
         return tokenized_sentence
 
 
+def jieba_tokenize(inlist):
+    outlist = []
+    for line in inlist:
+        tokens = [tok[0] for tok in jieba.tokenize(line.strip())]
+        out = ' '.join(tokens)
+        out = re.sub('\s+', ' ', out)
+        outlist.append(out.split())
+    return outlist
+
+
+def fugashi_tokenize(inlist):
+    outlist = []
+    tokenizer = fugashi.Tagger()
+    for line in inlist:
+        tokens = [word.surface for word in tokenizer(line.strip())]
+        out = ' '.join(tokens)
+        out = re.sub('\s+', ' ', out)
+        outlist.append(out.split())
+    return outlist
+
+
+def flores_tokenize(language, inlist):
+    print('Using flores tokenizer')
+    indic_nlp_path='indic_nlp_resources'
+    try:
+        sys.path.extend([
+            indic_nlp_path,
+            os.path.join(indic_nlp_path, "src"),
+        ])
+        from indicnlp.tokenize import indic_tokenize
+        from indicnlp.normalize.indic_normalize import IndicNormalizerFactory
+    except:
+        raise Exception(
+            "Cannot load Indic NLP Library, make sure --indic-nlp-path is correct"
+        )
+    # create normalizer
+    factory = IndicNormalizerFactory()
+    normalizer = factory.get_normalizer(
+        language, remove_nuktas=False,
+    )
+    factory = IndicNormalizerFactory()
+    normalizer = factory.get_normalizer(
+        language, remove_nuktas=False,
+    )
+    # normalize and tokenize
+    outlist = []
+    for line in inlist:
+        line = normalizer.normalize(line)
+        line = " ".join(indic_tokenize.trivial_tokenize(line, language))
+        outlist.append(line.strip().split())
+    return outlist
+
+
+def moses_tokenize(lang, inlist):
+    tmp_folder = "/project/OML/tdinh/tmp_storage"
+    with open(f"{tmp_folder}/infile.txt", 'w') as f:
+        for line in inlist:
+            f.write(f"{line}\n")
+
+    tokeniser_script = "mosesdecoder/scripts/tokenizer/tokenizer.perl"
+    perl_params = [tokeniser_script, '-l', lang, '-no-escape']
+    with open(f"{tmp_folder}/outfile.txt", 'wb', 0) as fileout:
+        with open(f"{tmp_folder}/infile.txt", 'r') as filein:
+            subprocess.call(perl_params, stdin=filein, stdout=fileout)
+
+    with open(f"{tmp_folder}/outfile.txt", 'r') as f:
+        outlist = f.readlines()
+        outlist = [line.strip().split() for line in outlist]
+
+    return outlist
+
+
+def moses_tokenize_python(lang, inlist):
+    tokenizer = MosesTokenizer(lang=lang)
+    outlist = [tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False) for x in inlist]
+    return outlist
+
+
+def perform_tokenization(lang, inlist):
+    if lang == 'zh':
+        return jieba_tokenize(inlist)
+    elif lang == 'ja':
+        return fugashi_tokenize(inlist)
+    elif lang == 'ne' or lang == 'si' or lang == 'ma' or lang == 'mr':
+        return flores_tokenize(lang, inlist)
+    else:
+        return moses_tokenize(lang, inlist)
+
+
 def read_output_df(df_root_path, data_root_path, dataset, src_lang, tgt_lang, mask_type, beam, replacement_strategy,
                    ignore_case=False, no_of_replacements=1, seed=0, ref_available=False,
                    tokenize_sentences=False, reformat_for_src_tgt_alignment=False,
@@ -368,14 +462,11 @@ def read_output_df(df_root_path, data_root_path, dataset, src_lang, tgt_lang, ma
         original_trans['SRC_original_idx'] = original_trans.index
 
     if tokenize_sentences:
-        tgt_tokenizer = MosesTokenizer(lang=tgt_lang)
-        src_tokenizer = MosesTokenizer(lang=src_lang)
-
         print("Tokenize everything ...")
         if not winoMT:
             # Tokenizing the original src-trans
             # For WMT21 QE data, use the provided tokens from the data for original SRC and trans
-            # and use sacremoses to tokenize the perturbed SRC and trans
+            # and perform tokenization ourselves for the perturbed SRC and trans
             if dataset.startswith("WMT21_DA"):
                 # Load the tokens from data
                 if dataset.startswith("WMT21_DA_test"):
@@ -396,24 +487,15 @@ def read_output_df(df_root_path, data_root_path, dataset, src_lang, tgt_lang, ma
                 original_trans['tokenized_SRC-Trans'] = tokenized_translations
                 original_trans['tokenized_SRC'] = tokenized_srcs
             else:
-                original_trans['tokenized_SRC-Trans'] = original_trans['SRC-Trans'].apply(
-                    lambda x: tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
-                )
-                original_trans['tokenized_SRC'] = original_trans['SRC'].apply(
-                    lambda x: src_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
-                )
+                original_trans['tokenized_SRC-Trans'] = perform_tokenization(tgt_lang, original_trans['SRC-Trans'].tolist())
+                original_trans['tokenized_SRC'] = perform_tokenization(src_lang, original_trans['SRC'].tolist())
+
         # Tokenizing the perturbed src-trans
-        output_df['tokenized_SRC_perturbed'] = output_df['SRC_perturbed'].apply(
-            lambda x: tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
-        )
-        output_df['tokenized_SRC_perturbed-Trans'] = output_df['SRC_perturbed-Trans'].apply(
-            lambda x: tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
-        )
+        output_df['tokenized_SRC_perturbed'] = perform_tokenization(src_lang, output_df['SRC_perturbed'].tolist())
+        output_df['tokenized_SRC_perturbed-Trans'] = perform_tokenization(tgt_lang, output_df['SRC_perturbed-Trans'].tolist())
 
         if 'REF' in output_df.columns:
-            output_df['tokenized_REF'] = output_df['REF'].apply(
-                lambda x: tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
-            )
+            output_df['tokenized_REF'] = perform_tokenization(tgt_lang, output_df['REF'].tolist())
 
     if reformat_for_src_tgt_alignment and not winoMT:
         assert tokenize_sentences
