@@ -11,6 +11,8 @@ from scipy.stats import zscore
 from scipy.stats import pearsonr, spearmanr
 from collections import defaultdict
 from sacremoses import MosesTokenizer
+from multiprocessing import Pool, cpu_count
+from itertools import repeat
 
 
 def load_gold_labels(dataset, data_root_path, src_lang, tgt_lang, task):
@@ -576,20 +578,36 @@ def hyperparams_tune_word_level_eval(methods, nmt_log_prob_thresholds, dataset, 
             hyperparams_choices = [effecting_words_thresholds, consistence_trans_portion_thresholds,
                                    uniques_portion_for_noiseORperturbed_thresholds, no_effecting_words_portion_thresholds]
             choice_tuples = list(itertools.product(*hyperparams_choices))
-            for choice_tuple in choice_tuples:
-                effecting_words_threshold, consistence_trans_portion_threshold, \
-                uniques_portion_for_noiseORperturbed_threshold, no_effecting_words_portion_threshold = choice_tuple
-                matthews_corrcoef_score = word_level_eval(task, dataset, data_root_path, src_lang,
-                                                          tgt_lang,
-                                                          perturbed_trans_df_path,
-                                                          original_translation_output_dir=original_translation_output_dir,
-                                                          word_level_eval_method=method,
-                                                          effecting_words_threshold=effecting_words_threshold,
-                                                          consistence_trans_portion_threshold=consistence_trans_portion_threshold,
-                                                          uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold,
-                                                          no_effecting_words_portion_threshold=no_effecting_words_portion_threshold,
-                                                          alignment_tool=alignment_tool
-                                                          )
+
+            # Multiprocessing for speeding up
+            # Flatten for each params
+            all_effecting_words_threshold = [choice_tuple[0] for choice_tuple in choice_tuples]
+            all_consistence_trans_portion_threshold = [choice_tuple[1] for choice_tuple in choice_tuples]
+            all_uniques_portion_for_noiseORperturbed_threshold = [choice_tuple[2] for choice_tuple in choice_tuples]
+            all_no_effecting_words_portion_threshold = [choice_tuple[3] for choice_tuple in choice_tuples]
+
+            # num_processes = cpu_count() - 1 if cpu_count() > 1 else cpu_count()
+            num_processes = 10
+            with Pool(num_processes) as pool:
+                matthews_corrcoef_scores = pool.starmap(word_level_eval,
+                                                       zip(repeat(task),
+                                                           repeat(dataset),
+                                                           repeat(data_root_path),
+                                                           repeat(src_lang),
+                                                           repeat(tgt_lang),
+                                                           repeat(perturbed_trans_df_path),
+                                                           repeat(original_translation_output_dir),
+                                                           repeat(method),
+                                                           repeat(0.5),  # Log prob threshold for the other method, not used, just for syntax
+                                                           all_effecting_words_threshold,
+                                                           all_consistence_trans_portion_threshold,
+                                                           all_uniques_portion_for_noiseORperturbed_threshold,
+                                                           all_no_effecting_words_portion_threshold,
+                                                           repeat(alignment_tool)
+                                                           ))
+
+            for idx, choice_tuple in enumerate(choice_tuples):
+                matthews_corrcoef_score = matthews_corrcoef_scores[idx]
                 print(f"\t\tchoice_tuple: {choice_tuple}")
                 print(f"\t\t\tmatthews_corrcoef_score: {matthews_corrcoef_score}")
                 if matthews_corrcoef_score >= max_score:
