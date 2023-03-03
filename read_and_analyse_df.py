@@ -4,6 +4,7 @@ Read in an output translations df and optionally analyse it (by appending column
 import re
 import subprocess
 import sys
+import tempfile
 
 import fugashi
 import jieba
@@ -389,20 +390,20 @@ def flores_tokenize(language, inlist):
 
 
 def moses_tokenize(lang, inlist):
-    tmp_folder = "/project/OML/tdinh/tmp_storage"
-    with open(f"{tmp_folder}/infile.txt", 'w') as f:
-        for line in inlist:
-            f.write(f"{line}\n")
+    with tempfile.TemporaryDirectory() as tmp_folder:
+        with open(f"{tmp_folder}/infile.txt", 'w') as f:
+            for line in inlist:
+                f.write(f"{line}\n")
 
-    tokeniser_script = "mosesdecoder/scripts/tokenizer/tokenizer.perl"
-    perl_params = [tokeniser_script, '-l', lang, '-no-escape']
-    with open(f"{tmp_folder}/outfile.txt", 'wb', 0) as fileout:
-        with open(f"{tmp_folder}/infile.txt", 'r') as filein:
-            subprocess.call(perl_params, stdin=filein, stdout=fileout)
+        tokeniser_script = "mosesdecoder/scripts/tokenizer/tokenizer.perl"
+        perl_params = [tokeniser_script, '-l', lang, '-no-escape']
+        with open(f"{tmp_folder}/outfile.txt", 'wb', 0) as fileout:
+            with open(f"{tmp_folder}/infile.txt", 'r') as filein:
+                subprocess.call(perl_params, stdin=filein, stdout=fileout)
 
-    with open(f"{tmp_folder}/outfile.txt", 'r') as f:
-        outlist = f.readlines()
-        outlist = [line.strip().split() for line in outlist]
+        with open(f"{tmp_folder}/outfile.txt", 'r') as f:
+            outlist = f.readlines()
+            outlist = [line.strip().split() for line in outlist]
 
     return outlist
 

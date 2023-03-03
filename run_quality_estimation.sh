@@ -53,19 +53,19 @@ else
 fi
 
 if [ -z "$8" ]; then
-  declare -a effecting_words_thresholds=(1 2 3 )
+  declare -a effecting_words_thresholds=(1 2 3 4 )
 else
   effecting_words_thresholds=$8
 fi
 
 if [ -z "$9" ]; then
-  declare -a consistence_trans_portion_thresholds=(0.8 0.85 0.9 0.95 )
+  declare -a consistence_trans_portion_thresholds=(0.9 0.95 )
 else
   consistence_trans_portion_thresholds=$9
 fi
 
 if [ -z "${10}" ]; then
-  declare -a uniques_portion_for_noiseORperturbed_thresholds=(0.35 0.4 0.45 )
+  declare -a uniques_portion_for_noiseORperturbed_thresholds=(0.4 0.5 0.6 0.7 0.8 0.9 )
 else
   uniques_portion_for_noiseORperturbed_thresholds=${10}
 fi

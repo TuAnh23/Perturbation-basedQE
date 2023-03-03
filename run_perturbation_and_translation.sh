@@ -133,14 +133,6 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
   fi
 
   if [ "$qe_wmt21" = "True" ]; then
-    # Use the same NMT model as the ones used to create the QE dataset to translate
-    # Instructions: https://github.com/facebookresearch/mlqe/blob/main/nmt_models/README-translate.md
-    # Define vars
-    INPUT=${output_dir}/input
-    OUTPUT=${output_dir}/trans_sentences.txt
-    BPE_ROOT=/home/tdinh/miniconda3/envs/KIT_start/lib/python3.9/site-packages/subword_nmt
-    BPE=models/${SRC_LANG}-${TGT_LANG}/bpecodes
-    MODEL_DIR=models/${SRC_LANG}-${TGT_LANG}
     # Preprocess input data
     python -u QE_WMT21_format_utils.py \
       --func "format_input" \
@@ -150,23 +142,79 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
       --src_lang ${SRC_LANG} \
       --tgt_lang ${TGT_LANG} \
       --tmp_dir ${TMP}
-    # Tokenize data
-    for LANG in $SRC_LANG $TGT_LANG; do
-      sacremoses -l $LANG tokenize -a < $INPUT.$LANG > $TMP/preprocessed.tok.$LANG
-      python $BPE_ROOT/apply_bpe.py -c ${BPE} < $TMP/preprocessed.tok.$LANG > $TMP/preprocessed.tok.bpe.$LANG
-    done
-    # Apply bpe
-    for LANG in $SRC_LANG $TGT_LANG; do
-      python $BPE_ROOT/apply_bpe.py -c ${BPE} < $TMP/preprocessed.tok.$LANG > $TMP/preprocessed.tok.bpe.$LANG
-    done
-    # Binarize the data for faster translation
-    fairseq-preprocess --srcdict $MODEL_DIR/dict.$SRC_LANG.txt --tgtdict $MODEL_DIR/dict.$TGT_LANG.txt --source-lang ${SRC_LANG} --target-lang ${TGT_LANG} --testpref $TMP/preprocessed.tok.bpe --destdir $TMP/bin --workers 4
-    # Translate
-    fairseq-generate $TMP/bin --path ${MODEL_DIR}/${SRC_LANG}-${TGT_LANG}.pt --beam 5 --source-lang $SRC_LANG --target-lang $TGT_LANG --no-progress-bar --unkpen 5 --batch-size ${batch_size} > ${output_dir}/fairseq.out
-    grep ^H ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f3- > ${output_dir}/mt.out
-    grep ^P ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f2- > ${output_dir}/log_prob.out
-    # Post-process
-    sed -r 's/(@@ )| (@@ ?$)//g' < ${output_dir}/mt.out | sacremoses -l $TGT_LANG detokenize > $OUTPUT
+
+    # Use the same NMT model as the ones used to create the QE dataset to translate
+    if [[ ($SRC_LANG == "en" && $TGT_LANG == "de") || ($SRC_LANG == "en" && $TGT_LANG == "zh") || ($SRC_LANG == "ro" && $TGT_LANG == "en") || ($SRC_LANG == "et" && $TGT_LANG == "en") ]]; then
+      # Instructions: https://github.com/facebookresearch/mlqe/blob/main/nmt_models/README-translate.md
+      # Define vars
+      INPUT=${output_dir}/input
+      OUTPUT=${output_dir}/trans_sentences.txt
+      BPE_ROOT=/home/tdinh/miniconda3/envs/KIT_start/lib/python3.9/site-packages/subword_nmt
+      BPE=models/${SRC_LANG}-${TGT_LANG}/bpecodes
+      MODEL_DIR=models/${SRC_LANG}-${TGT_LANG}
+      # Tokenize data
+      for LANG in $SRC_LANG $TGT_LANG; do
+#        sacremoses -l $LANG tokenize -a < $INPUT.$LANG > $TMP/preprocessed.tok.$LANG
+        perl mosesdecoder/scripts/tokenizer/tokenizer.perl -threads 80 -a -l $LANG < $INPUT.$LANG > $TMP/preprocessed.tok.$LANG
+        python $BPE_ROOT/apply_bpe.py -c ${BPE} < $TMP/preprocessed.tok.$LANG > $TMP/preprocessed.tok.bpe.$LANG
+      done
+      # Apply bpe
+      for LANG in $SRC_LANG $TGT_LANG; do
+        python $BPE_ROOT/apply_bpe.py -c ${BPE} < $TMP/preprocessed.tok.$LANG > $TMP/preprocessed.tok.bpe.$LANG
+      done
+      # Binarize the data for faster translation
+      fairseq-preprocess --srcdict $MODEL_DIR/dict.$SRC_LANG.txt --tgtdict $MODEL_DIR/dict.$TGT_LANG.txt --source-lang ${SRC_LANG} --target-lang ${TGT_LANG} --testpref $TMP/preprocessed.tok.bpe --destdir $TMP/bin --workers 4
+      # Translate
+      fairseq-generate $TMP/bin --path ${MODEL_DIR}/${SRC_LANG}-${TGT_LANG}.pt --beam 5 --source-lang $SRC_LANG --target-lang $TGT_LANG --no-progress-bar --unkpen 5 --batch-size ${batch_size} > ${output_dir}/fairseq.out
+      grep ^H ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f3- > ${output_dir}/mt.out
+      grep ^P ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f2- > ${output_dir}/log_prob.out
+      # Post-process
+#      sed -r 's/(@@ )| (@@ ?$)//g' < ${output_dir}/mt.out | sacremoses -l $TGT_LANG detokenize > $OUTPUT
+      sed -r 's/(@@ )| (@@ ?$)//g' < ${output_dir}/mt.out | perl mosesdecoder/scripts/tokenizer/detokenizer.perl -l $TGT_LANG > $OUTPUT
+    elif [[ ($SRC_LANG == "en" && $TGT_LANG == "ja") || ($SRC_LANG == "en" && $TGT_LANG == "cs") ]]; then
+      model_path=models/mbart50.ft.1n
+      data_root=${TMP}
+      raw_folder=raw
+      if [ "$SRC_LANG" = "en" ]; then
+        SRC_LANG_formatted="en_XX"
+      fi
+      if [ "$TGT_LANG" = "ja" ]; then
+        TGT_LANG_formatted="ja_XX"
+      elif [ "$TGT_LANG" = "cs" ]; then
+        TGT_LANG_formatted="cs_CZ"
+      fi
+
+      mkdir ${data_root}/${raw_folder}
+      cp ${output_dir}/input.${SRC_LANG} ${data_root}/${raw_folder}/test.${SRC_LANG_formatted}-${TGT_LANG_formatted}.${SRC_LANG_formatted}
+      cp ${output_dir}/input.${TGT_LANG} ${data_root}/${raw_folder}/test.${SRC_LANG_formatted}-${TGT_LANG_formatted}.${TGT_LANG_formatted}
+      python -u binarize.py \
+        --data_root ${data_root} \
+        --raw-folder ${raw_folder} \
+        --spm_model ${model_path}/sentence.bpe.model \
+        --spm_vocab ${model_path}/dict.${SRC_LANG_formatted}.txt ${model_path}/dict.${TGT_LANG_formatted}.txt
+
+      path_2_data=${data_root}/databin
+      model=${model_path}/model.pt
+      lang_list=${model_path}/ML50_langs.txt
+
+      fairseq-generate $path_2_data \
+        --path $model \
+        --task translation_multi_simple_epoch \
+        --gen-subset test \
+        --source-lang ${SRC_LANG_formatted} \
+        --target-lang ${TGT_LANG_formatted} \
+        --sacrebleu --remove-bpe 'sentencepiece'\
+        --batch-size 32 \
+        --encoder-langtok "src" \
+        --decoder-langtok \
+        --lang-dict "$lang_list" \
+        --lang-pairs "${SRC_LANG_formatted}-${TGT_LANG_formatted}" > ${output_dir}/fairseq.out
+      grep ^H ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f3- > ${output_dir}/mt.out
+      grep ^P ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f2- > ${output_dir}/log_prob.out
+      # Post-process
+      cp ${output_dir}/mt.out ${output_dir}/trans_sentences.txt
+    fi
+
     # Put the translation to the dataframe
     python -u QE_WMT21_format_utils.py \
       --func "format_translation_file" \

@@ -28,3 +28,19 @@ def set_seed(seed=0):
     torch.manual_seed(seed)
     # If CUDA is not available, this is silently ignored.
     torch.cuda.manual_seed_all(seed)
+
+
+def load_text_file(file_path):
+    """
+    Load text file into a list, each item is a line of the file
+    """
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+        lines = [line.strip() for line in lines]
+    return lines
+
+
+def write_text_file(lines, file_path):
+    with open(file_path, 'w') as f:
+        for line in lines:
+            f.write(f"{line}\n")

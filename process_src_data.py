@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--tgt_lang', type=str, default="de")
     parser.add_argument('--dataname', type=str, default="MuST-SHE-en2fr",
                         help="[MuST-SHE-en2fr|Europarl-en2de|IWSLT15-en2vi|wmt19-newstest2019-en2de|"
-                             "masked_covost2_for_en2de]")
+                             "masked_covost2_for_en2de|cherry-picked]")
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--output_dir', type=str)
     parser.add_argument('--dev', type=str_to_bool, help="Whether to create a tiny dataset for testing")
@@ -145,6 +145,13 @@ def main():
             en_sentences_tok = [line.rstrip() for line in en_sentences_tok]
 
         src_df = pd.DataFrame(data={'SRC': en_sentences, 'tokenized_SRC': en_sentences_tok})
+
+    elif args.dataname == 'cherry-picked':
+        assert args.src_lang == 'en'
+        en_sentences = ['Women who are dieting can become iron deficient.',
+                        'My new doctor got the medical degree from the KIT, which she worked hard for.']
+
+        src_df = pd.DataFrame(data={'SRC': en_sentences})
 
     else:
         raise RuntimeError(f"Dataset {args.dataname} not available.")
