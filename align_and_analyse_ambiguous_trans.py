@@ -19,6 +19,8 @@ from xml.sax.saxutils import escape
 from multiprocessing import Pool, cpu_count
 from itertools import repeat
 
+pd.options.mode.chained_assignment = None
+
 
 def cast_to_index(string_index):
     """
@@ -420,6 +422,9 @@ def analyse_single_sentence(sentence_df,
     """
     count_original_sentence_idx = sentence_df['SRC_original_idx'].value_counts()
     assert count_original_sentence_idx.shape[0] == 1  # Because this function is for a single group
+
+    # Cast to str bc pandas think the word "nan" is NaN
+    sentence_df['original_word'] = sentence_df['original_word'].astype(str)
 
     groups_by_perturbed_word = sentence_df.groupby("SRC_masked_index", as_index=False)
 
