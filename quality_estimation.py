@@ -13,6 +13,7 @@ from collections import defaultdict
 from sacremoses import MosesTokenizer
 from multiprocessing import Pool, cpu_count
 from itertools import repeat
+from utils import load_text_file
 
 
 def load_gold_labels(dataset, data_root_path, src_lang, tgt_lang, task):
@@ -243,8 +244,30 @@ def get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang, original
         tokenized_translations = [tgt_tokenizer.tokenize(x, escape=False, aggressive_dash_splits=False)
                                   for x in translations]
 
-    subwords = load_subwords_from_file(subwords_path)
+    lang_pair = f"{src_lang}-{tgt_lang}"
+    subwords = load_subwords_from_file(subwords_path, lang_pair=f"{src_lang}-{tgt_lang}")
     subword_log_probs = load_subword_log_probs_from_file(subword_log_probs_path)
+    # We do not care about the end-of-sentence marker which is omitted from the text.
+    if lang_pair in ['en-de', 'en-zh']:
+        subword_log_probs = [x[:-1] for x in subword_log_probs]
+    elif lang_pair in ['en-cs', 'en-ja']:
+        subword_lines = load_text_file(subwords_path)
+        for sentence_idx in range(len(subword_lines)):
+            if subword_lines[sentence_idx].startswith('▁ '):
+                subword_log_probs[sentence_idx] = subword_log_probs[sentence_idx][2:-1]
+            elif subword_lines[sentence_idx].startswith('▁'):
+                subword_log_probs[sentence_idx] = subword_log_probs[sentence_idx][1:-1]
+            else:
+                subword_log_probs[sentence_idx] = subword_log_probs[sentence_idx][:-1]
+
+    for sentence_idx in range(len(subwords)):
+        if len(subwords[sentence_idx]) != len(subword_log_probs[sentence_idx]):
+            print(sentence_idx)
+            print(subwords[sentence_idx])
+            print(subword_log_probs[sentence_idx])
+            print(len(subwords[sentence_idx]), len(subword_log_probs[sentence_idx]))
+            break
+        assert len(subwords[sentence_idx]) == len(subword_log_probs[sentence_idx])
 
     word_log_probs = merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs, tokenized_translations)
     return word_log_probs
@@ -259,10 +282,20 @@ def load_subword_log_probs_from_file(subword_log_probs_path):
     return subword_log_probs
 
 
-def load_subwords_from_file(subwords_path):
-    with open(subwords_path, 'r') as f:
-        subwords = f.readlines()
-        subwords = [line.replace('\n', '').split() for line in subwords]
+def load_subwords_from_file(subwords_path, lang_pair):
+    if lang_pair in ['en-de', 'en-zh']:
+        # It used the default bpe, where word continuation markers is @@
+        with open(subwords_path, 'r') as f:
+            subwords = f.readlines()
+            subwords = [line.replace('\n', '').split() for line in subwords]
+    elif lang_pair in ['en-ja', 'en-cs']:
+        # It used sentence bpe, where word continuation markers is space, word split is ▁
+        # Convert to the default bpe
+        with open(subwords_path, 'r') as f:
+            subwords = f.readlines()
+            subwords = [line[1:].strip().replace('\n', '').replace(' ▁', '▁').replace(' ', '@@▁').split('▁') for line in subwords]
+    else:
+        raise RuntimeError(f"Unknown lang pair {lang_pair}")
     return subwords
 
 
@@ -279,7 +312,8 @@ def get_nmt_word_log_probs_avg_perturbed(dataset, data_root_path, src_lang, tgt_
     )
 
     all_perturbed_word_log_probs = get_nmt_word_log_probs_perturbed(perturbed_translation_output_dir,
-                                                                    perturbed_trans_df_path)
+                                                                    perturbed_trans_df_path,
+                                                                    lang_pair=f"{src_lang}-{tgt_lang}")
 
     perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
     # Perform alignment
@@ -323,13 +357,13 @@ def get_nmt_word_log_probs_avg_perturbed(dataset, data_root_path, src_lang, tgt_
     return avg_perturbed_log_probs
 
 
-def get_nmt_word_log_probs_perturbed(perturbed_translation_output_dir, perturbed_trans_df_path):
+def get_nmt_word_log_probs_perturbed(perturbed_translation_output_dir, perturbed_trans_df_path, lang_pair):
     subwords_path = f"{perturbed_translation_output_dir}/mt.out"
     subword_log_probs_path = f"{perturbed_translation_output_dir}/log_prob.out"
 
     perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
     tokenized_translations = perturbed_trans_df['tokenized_SRC_perturbed-Trans'].tolist()
-    subwords = load_subwords_from_file(subwords_path)
+    subwords = load_subwords_from_file(subwords_path, lang_pair)
     subword_log_probs = load_subword_log_probs_from_file(subword_log_probs_path)
     word_log_probs = merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs, tokenized_translations)
 
@@ -340,35 +374,75 @@ def merge_subwords_log_prob_to_words_log_prob(subwords, subword_log_probs, token
     """
     Concat subwords wih '@@' and hyphen tokens @-@
     """
-    # Merge the subword_log_probs to word_log_probs
-    # Concat subwords wih '@@' and hyphen tokens @-@
+    subwords = [[x.replace('@@', '').replace('@-@', '-') for x in y] for y in subwords]
     word_log_probs = []
     for sentence_index in range(len(subwords)):
-        word_log_probs_per_sentence = defaultdict(lambda: np.nan)  # word:log_prob
+        word_log_probs_per_sentence = []
         subword_log_probs_per_sentence = subword_log_probs[sentence_index]
         subwords_per_sentence = subwords[sentence_index]
-        current_word_log_prob = 0
-        current_word = ''
-        for subword_index in range(len(subwords_per_sentence)):
-            current_word_log_prob = current_word_log_prob + subword_log_probs_per_sentence[subword_index]
-            if subwords_per_sentence[subword_index].endswith('@@'):
-                current_word = current_word + subwords_per_sentence[subword_index][:-2]
-            elif subwords_per_sentence[subword_index] == '@-@':
-                current_word = current_word + '-'
-            else:
-                current_word = current_word + subwords_per_sentence[subword_index]
-            if (not subwords_per_sentence[subword_index].endswith('@@')) and \
-                    (not subwords_per_sentence[subword_index] == '@-@') and \
-                    (not (((subword_index + 1) < len(subwords_per_sentence)) and (
-                            subwords_per_sentence[subword_index + 1] == '@-@'))):
-                word_log_probs_per_sentence[current_word] = current_word_log_prob
-                current_word_log_prob = 0
-                current_word = ''
-
-        fixed_word_log_probs_per_sentence = [word_log_probs_per_sentence[word] for word in
-                                             tokenized_translations[sentence_index]]
-        word_log_probs.append(fixed_word_log_probs_per_sentence)
+        start_pointer = 0  # Will move from left to right along the sentence, subword by subword
+        for word in tokenized_translations[sentence_index]:
+            # Finding the start where the word and the subword first align
+            found = False
+            tmp_start_pointer = start_pointer
+            while tmp_start_pointer < len(subwords_per_sentence):
+                if word.startswith(subwords_per_sentence[tmp_start_pointer]):
+                    start_pointer = tmp_start_pointer
+                    found = True
+                    break
+                else:
+                    tmp_start_pointer = tmp_start_pointer + 1
+            if not found:
+                word_log_probs_per_sentence.append(np.nan)
+                continue
+            # Finding the end where the word and the subword first align
+            tmp_end_pointer = start_pointer
+            found = False
+            while tmp_end_pointer < len(subwords_per_sentence):
+                if ''.join(subwords_per_sentence[start_pointer:tmp_end_pointer+1]) == word:
+                    word_log_probs_per_sentence.append(
+                        np.sum(np.array(subword_log_probs_per_sentence[start_pointer:tmp_end_pointer+1]))
+                    )
+                    found = True
+                    start_pointer = tmp_end_pointer + 1
+                    break
+                else:
+                    tmp_end_pointer = tmp_end_pointer + 1
+            if not found:
+                word_log_probs_per_sentence.append(np.nan)
+                continue
+        word_log_probs.append(word_log_probs_per_sentence)
     return word_log_probs
+
+    # # Merge the subword_log_probs to word_log_probs
+    # # Concat subwords wih '@@' and hyphen tokens @-@
+    # word_log_probs = []
+    # for sentence_index in range(len(subwords)):
+    #     word_log_probs_per_sentence = defaultdict(lambda: np.nan)  # word:log_prob
+    #     subword_log_probs_per_sentence = subword_log_probs[sentence_index]
+    #     subwords_per_sentence = subwords[sentence_index]
+    #     current_word_log_prob = 0
+    #     current_word = ''
+    #     # Prob of a word = product of probs of the subwords
+    #     for subword_index in range(len(subwords_per_sentence)):
+    #         current_word_log_prob = current_word_log_prob + subword_log_probs_per_sentence[subword_index]
+    #         if subwords_per_sentence[subword_index].endswith('@@'):
+    #             current_word = current_word + subwords_per_sentence[subword_index][:-2]
+    #         elif subwords_per_sentence[subword_index] == '@-@':
+    #             current_word = current_word + '-'
+    #         else:
+    #             current_word = current_word + subwords_per_sentence[subword_index]
+    #         if (not subwords_per_sentence[subword_index].endswith('@@')) and \
+    #                 (not subwords_per_sentence[subword_index] == '@-@') and \
+    #                 (not (((subword_index + 1) < len(subwords_per_sentence)) and (
+    #                         subwords_per_sentence[subword_index + 1] == '@-@'))):
+    #             word_log_probs_per_sentence[current_word] = current_word_log_prob
+    #             current_word_log_prob = 0
+    #             current_word = ''
+    #     fixed_word_log_probs_per_sentence = [word_log_probs_per_sentence[word]
+    #                                          for word in tokenized_translations[sentence_index]]
+    #     word_log_probs.append(fixed_word_log_probs_per_sentence)
+    # return word_log_probs
 
 
 def find_bad_word(tgt_src_effects, effecting_words_threshold):
@@ -409,7 +483,7 @@ def find_ok_word(tgt_src_effects, no_effecting_words_threshold):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--perturbed_trans_df_path', type=str)
+    parser.add_argument('--perturbed_trans_df_path', type=str, default=None)
     parser.add_argument('--original_translation_output_dir', type=str,
                         help='Folder containing the translation output, including the log probabilities')
     parser.add_argument('--dataset', type=str, choices=['WMT21_DA_test', 'WMT21_DA_dev'])
