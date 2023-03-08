@@ -203,7 +203,7 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
         --gen-subset test \
         --source-lang ${SRC_LANG_formatted} \
         --target-lang ${TGT_LANG_formatted} \
-        --sacrebleu --remove-bpe 'sentencepiece'\
+        --sacrebleu \
         --batch-size 32 \
         --encoder-langtok "src" \
         --decoder-langtok \
@@ -212,7 +212,7 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
       grep ^H ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f3- > ${output_dir}/mt.out
       grep ^P ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f2- > ${output_dir}/log_prob.out
       # Post-process
-      cp ${output_dir}/mt.out ${output_dir}/trans_sentences.txt
+      sed -r 's/ //g; s/▁/ /g; s/^[[:space:]]*//' < ${output_dir}/mt.out > ${output_dir}/trans_sentences.txt
     fi
 
     # Put the translation to the dataframe
