@@ -15,7 +15,7 @@ def main():
     print(args)
 
     # Collect the best dev score
-    collect_dev_df = pd.DataFrame(columns=['MCC', 'alignment_tool', 'masking_type', 'unmasking_model'])
+    collect_dev_df = pd.DataFrame(columns=['MCC', 'alignment_tool', 'masking_type', 'unmasking_model', 'QE_params'])
     for alignment_tool in ['Tercom', 'Levenshtein']:
         lines = load_text_file(
             f'{args.analyse_output_path}/WMT21_DA_dev_{args.src_lang}2{args.tgt_lang}/qe_hyperparam_tuning_{alignment_tool}.txt'
@@ -26,10 +26,12 @@ def main():
             masking_type = re.search('mask_type: MultiplePerSentence_(.*), unmasking_models', line).group(1)
             unmasking_model = re.search('unmasking_models: (.*), QE_params', line).group(1)
             score = float(re.search('score: (.*)', line).group(1))
+            QE_params = re.search('QE_params: (.*), score', line).group(1)
             collect_dev_df = pd.concat([collect_dev_df,
                                     pd.DataFrame(
                                         {0: {'MCC': score, 'alignment_tool': alignment_tool,
-                                         'masking_type': masking_type, 'unmasking_model': unmasking_model}}
+                                         'masking_type': masking_type, 'unmasking_model': unmasking_model,
+                                         'QE_params': QE_params}}
                                     ).transpose()],
                                    ignore_index=True)
 
@@ -42,10 +44,12 @@ def main():
                 assert len(lines) == 7
                 line = lines[-1]
                 score = float(re.search('best score (.*), best params', line).group(1))
+                QE_params = re.search('best params (.*)', line).group(1)
                 collect_test_df = pd.concat([collect_test_df,
                                             pd.DataFrame(
                                                 {0: {'MCC': score, 'alignment_tool': alignment_tool,
-                                                     'masking_type': masking_type, 'unmasking_model': unmasking_model}}
+                                                     'masking_type': masking_type, 'unmasking_model': unmasking_model,
+                                                     'QE_params': QE_params}}
                                             ).transpose()],
                                            ignore_index=True)
     best_dev = write_stats(
