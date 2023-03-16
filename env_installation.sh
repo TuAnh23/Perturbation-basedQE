@@ -43,3 +43,9 @@ cd ../
 git clone https://github.com/moses-smt/mosesdecoder.git
 
 cd KIT_start
+
+conda create -n openkiwi python=3.8
+conda activate openkiwi
+pip install openkiwi
+pip install protobuf==3.20.1
+conda install pandas=1.3

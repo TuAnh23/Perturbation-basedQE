@@ -425,6 +425,33 @@ def perform_tokenization(lang, inlist):
         return moses_tokenize(lang, inlist)
 
 
+def tokenization_per_dataset(dataset, data_root_path, src_lang, tgt_lang, src_list, trans_list):
+    # Tokenizing the original src-trans
+    # For WMT21 QE data, use the provided tokens from the data for original SRC and trans
+    # and perform tokenization ourselves for the perturbed SRC and trans
+    if dataset.startswith("WMT21_DA"):
+        # Load the tokens from data
+        if dataset.startswith("WMT21_DA_test"):
+            tokenized_src_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/test21.tok.src"
+            tokenized_trans_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/test21.tok.mt"
+        elif dataset.startswith("WMT21_DA_dev"):
+            tokenized_src_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/" \
+                                 f"{src_lang}-{tgt_lang}-dev/dev.src"
+            tokenized_trans_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/{src_lang}-{tgt_lang}-dev/dev.mt"
+        else:
+            raise RuntimeError
+        with open(tokenized_src_file, 'r') as f:
+            tokenized_srcs = f.readlines()
+            tokenized_srcs = [tokenized_src.strip().split() for tokenized_src in tokenized_srcs]
+        with open(tokenized_trans_file, 'r') as f:
+            tokenized_translations = f.readlines()
+            tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
+    else:
+        tokenized_translations = perform_tokenization(tgt_lang, trans_list)
+        tokenized_srcs = perform_tokenization(src_lang, src_list)
+    return {'tokenized_srcs': tokenized_srcs, 'tokenized_translations': tokenized_translations}
+
+
 def read_output_df(df_root_path, data_root_path, dataset, src_lang, tgt_lang, mask_type, beam, replacement_strategy,
                    ignore_case=False, no_of_replacements=1, seed=0, ref_available=False,
                    tokenize_sentences=False, reformat_for_src_tgt_alignment=False,
@@ -466,30 +493,12 @@ def read_output_df(df_root_path, data_root_path, dataset, src_lang, tgt_lang, ma
         print("Tokenize everything ...")
         if not winoMT:
             # Tokenizing the original src-trans
-            # For WMT21 QE data, use the provided tokens from the data for original SRC and trans
-            # and perform tokenization ourselves for the perturbed SRC and trans
-            if dataset.startswith("WMT21_DA"):
-                # Load the tokens from data
-                if dataset.startswith("WMT21_DA_test"):
-                    tokenized_src_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/test21.tok.src"
-                    tokenized_trans_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/test21.tok.mt"
-                elif dataset.startswith("WMT21_DA_dev"):
-                    tokenized_src_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/{src_lang}-{tgt_lang}-dev/dev.src"
-                    tokenized_trans_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/{src_lang}-{tgt_lang}-dev/dev.mt"
-                else:
-                    raise RuntimeError
-                with open(tokenized_src_file, 'r') as f:
-                    tokenized_srcs = f.readlines()
-                    tokenized_srcs = [tokenized_src.strip().split() for tokenized_src in tokenized_srcs]
-                with open(tokenized_trans_file, 'r') as f:
-                    tokenized_translations = f.readlines()
-                    tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
-                # Put tokens to the df
-                original_trans['tokenized_SRC-Trans'] = tokenized_translations
-                original_trans['tokenized_SRC'] = tokenized_srcs
-            else:
-                original_trans['tokenized_SRC-Trans'] = perform_tokenization(tgt_lang, original_trans['SRC-Trans'].tolist())
-                original_trans['tokenized_SRC'] = perform_tokenization(src_lang, original_trans['SRC'].tolist())
+            tokenize_result = tokenization_per_dataset(
+                dataset, data_root_path, src_lang, tgt_lang,
+                original_trans['SRC'].tolist(), original_trans['SRC-Trans'].tolist()
+            )
+            original_trans['tokenized_SRC-Trans'] = tokenize_result['tokenized_translations']
+            original_trans['tokenized_SRC'] = tokenize_result['tokenized_srcs']
 
         # Tokenizing the perturbed src-trans
         output_df['tokenized_SRC_perturbed'] = perform_tokenization(src_lang, output_df['SRC_perturbed'].tolist())

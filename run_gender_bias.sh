@@ -108,24 +108,39 @@ if [[ ! -f ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${
 fi
 
 # Run quality estimation and save the predicted labels
-declare -a QE_methods=('nmt_log_prob' 'nr_effecting_src_words' )
+declare -a QE_methods=('nmt_log_prob' 'nr_effecting_src_words' 'wmt18_openkiwi' )
 for QE_method in ${QE_methods[@]}; do
   if [[ ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ]]; then
-    python -u quality_estimation.py \
-      --perturbed_trans_df_path ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${mask_type}.pkl \
-      --original_translation_output_dir ${output_dir_original_SRC} \
-      --dataset ${dataname} \
-      --data_root_path ${data_root_dir} \
-      --src_lang ${SRC_LANG} \
-      --tgt_lang ${TGT_LANG} \
-      --seed ${seed} \
-      --method ${QE_method} \
-      --nmt_log_prob_threshold ${nmt_log_prob_threshold} \
-      --effecting_words_threshold ${effecting_words_threshold} \
-      --consistence_trans_portion_threshold ${consistence_trans_portion_threshold} \
-      --uniques_portion_for_noiseORperturbed_threshold ${uniques_portion_for_noiseORperturbed_threshold} \
-      --alignment_tool ${alignment_tool} \
-      --label_output_path ${analyse_output_path}/pred_labels_${QE_method}.pkl
+    if [[ ${QE_method} == "wmt18_openkiwi" ]]; then
+      python -u tokenize_original.py \
+        --original_translation_output_dir ${output_dir_original_SRC} \
+        --dataset ${dataname} \
+        --data_root_path ${data_root_dir} \
+        --src_lang ${SRC_LANG} \
+        --tgt_lang ${TGT_LANG}
+      conda activate openkiwi
+      python -u openkiwi_qe.py \
+        --original_translation_output_dir ${output_dir_original_SRC} \
+        --model_path "models/xlmr-en-de.ckpt" \
+        --label_output_path ${analyse_output_path}/pred_labels_${QE_method}.pkl
+      conda activate KIT_start
+    else
+      python -u quality_estimation.py \
+        --perturbed_trans_df_path ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${mask_type}.pkl \
+        --original_translation_output_dir ${output_dir_original_SRC} \
+        --dataset ${dataname} \
+        --data_root_path ${data_root_dir} \
+        --src_lang ${SRC_LANG} \
+        --tgt_lang ${TGT_LANG} \
+        --seed ${seed} \
+        --method ${QE_method} \
+        --nmt_log_prob_threshold ${nmt_log_prob_threshold} \
+        --effecting_words_threshold ${effecting_words_threshold} \
+        --consistence_trans_portion_threshold ${consistence_trans_portion_threshold} \
+        --uniques_portion_for_noiseORperturbed_threshold ${uniques_portion_for_noiseORperturbed_threshold} \
+        --alignment_tool ${alignment_tool} \
+        --label_output_path ${analyse_output_path}/pred_labels_${QE_method}.pkl
+    fi
   fi
 
   echo "Eval recall on gender bias by QE"
