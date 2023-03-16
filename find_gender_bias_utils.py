@@ -70,6 +70,7 @@ def main():
         # Calculate the percentage of wrong-gender token being labeled as BAD by QE
         with open(args.qe_pred_labels_path, 'rb') as f:
             qe_ok_bad_preds = pickle.load(f)
+        nr_pred_bads = sum([x.count('BAD') for x in qe_ok_bad_preds])
 
         nr_true_positives = 0  # The number of wrongly outputted gender translation that is labeled as BAD
         nr_positives = 0  # The total number of wrongly outputted gender translation
@@ -85,6 +86,7 @@ def main():
         wrong_gender_recall = nr_true_positives/nr_positives
         with open(args.output_path_eval_gender_bias, 'w') as f:
             f.write(f"wrong_gender_recall: {wrong_gender_recall}\n")
+            f.write(f"total number of predicted BAD labels: {nr_pred_bads}\n")
 
     else:
         raise RuntimeError(f"function {args.function} not available.")
