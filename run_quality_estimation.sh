@@ -86,10 +86,10 @@ replacement_strategy="masking_language_model_${unmasking_model}"
 number_of_replacement=30
 beam=5
 
-OUTPUT_dir=output/${dataname}_${trans_direction}
+output_root_path="output"
+OUTPUT_dir=${output_root_path}/${dataname}_${trans_direction}
 output_dir_original_SRC=${OUTPUT_dir}/original
 
-df_root_path="output"
 
 if [ -f "${analyse_output_path}/quality_estimation_${alignment_tool}.log" ]; then
   echo "Output files exists. Skip QE."
@@ -102,7 +102,7 @@ mkdir -p ${analyse_output_path}
 if [ "$use_src_tgt_alignment" = "True" ]; then
   # First generate the reformatted src-trans files to be used by awesome-align
   python -u src_tgt_alignment.py \
-    --df_root_path ${df_root_path} \
+    --output_root_path ${output_root_path} \
     --data_root_path ${data_root_dir} \
     --src_lang ${SRC_LANG} \
     --tgt_lang ${TGT_LANG} \
@@ -113,10 +113,10 @@ if [ "$use_src_tgt_alignment" = "True" ]; then
     --beam ${beam} \
     --mask_type ${mask_type}
   # Run awesome-align
-  abs_df_root_path=$(realpath $df_root_path)
+  abs_output_root_path=$(realpath $output_root_path)
   cd ../awesome-align
-  original_path_prefix=${abs_df_root_path}/${dataname}_${SRC_LANG}2${TGT_LANG}/original/translations
-  perturbed_path_prefix=${abs_df_root_path}/${dataname}_${SRC_LANG}2${TGT_LANG}/${replacement_strategy}/beam${beam}_perturb${mask_type}/${number_of_replacement}replacements/seed${seed}/translations
+  original_path_prefix=${abs_output_root_path}/${dataname}_${SRC_LANG}2${TGT_LANG}/original/translations
+  perturbed_path_prefix=${abs_output_root_path}/${dataname}_${SRC_LANG}2${TGT_LANG}/${replacement_strategy}/beam${beam}_perturb${mask_type}/${number_of_replacement}replacements/seed${seed}/translations
   declare -a path_prefixes=(${original_path_prefix} ${perturbed_path_prefix} )
   for PATH_PREFIX in ${path_prefixes[@]}; do
     echo $PATH_PREFIX
@@ -140,7 +140,7 @@ if [ "$use_src_tgt_alignment" = "True" ]; then
 fi
 
 python -u read_and_analyse_df.py \
-  --df_root_path ${df_root_path} \
+  --output_root_path ${output_root_path} \
   --data_root_path ${data_root_dir} \
   --src_lang ${SRC_LANG} \
   --tgt_lang ${TGT_LANG} \
@@ -155,7 +155,7 @@ python -u read_and_analyse_df.py \
   --use_src_tgt_alignment ${use_src_tgt_alignment} \
   --analyse_feature "edit_distance" "change_spread"
 
-python -u quality_estimation.py \
+python -u tune_quality_estimation.py \
   --perturbed_trans_df_path ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${mask_type}.pkl \
   --original_translation_output_dir ${output_dir_original_SRC} \
   --dataset ${dataname} \
@@ -173,3 +173,4 @@ python -u quality_estimation.py \
   --consistence_trans_portion_thresholds ${consistence_trans_portion_thresholds[@]} \
   --uniques_portion_for_noiseORperturbed_thresholds ${uniques_portion_for_noiseORperturbed_thresholds[@]} \
   --alignment_tool ${alignment_tool} |& tee ${analyse_output_path}/quality_estimation_${alignment_tool}.log
+

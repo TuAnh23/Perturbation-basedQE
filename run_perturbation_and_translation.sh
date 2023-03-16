@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=5
+export CUDA_VISIBLE_DEVICES=1
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 
@@ -40,7 +40,12 @@ else
   unmasking_model=$5
 fi
 
-qe_wmt21="True"
+if [ -z "$6" ]; then
+  MTmodel="qe_wmt21"
+else
+  MTmodel=$6
+fi
+
 dev=False
 grouped_mask=False
 trans_direction="${SRC_LANG}2${TGT_LANG}"
@@ -72,7 +77,6 @@ output_dir_perturbed_SRC=${OUTPUT_dir}/${replacement_strategy}/beam${beam}_pertu
 TMP_dir_original_SRC=${TMP_dir}/original
 TMP_dir_perturbed_SRC=${TMP_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/${number_of_replacement}replacements/seed${seed}
 
-#rm -r $output_dir_perturbed_SRC
 if [ -d "$output_dir_perturbed_SRC" ]; then
   echo "Output files exists. Skip perturbation and translation."
   exit 0
@@ -93,25 +97,29 @@ python -u process_src_data.py \
   --output_dir ${output_dir_original_SRC} \
   --dev ${dev}
 
-# Mask the data
-python -u mask_src_data.py \
-  --original_src_path ${output_dir_original_SRC}/src_df.csv \
-  --src_lang ${SRC_LANG} \
-  --mask_type ${mask_type} \
-  --seed ${seed} \
-  --output_dir ${output_dir_perturbed_SRC} \
-  --masked_vocab_path ${masked_vocab_path}
+if [ ! -f "${output_dir_perturbed_SRC}/masked_df.csv" ]; then
+  # Mask the data
+  python -u mask_src_data.py \
+    --original_src_path ${output_dir_original_SRC}/src_df.csv \
+    --src_lang ${SRC_LANG} \
+    --mask_type ${mask_type} \
+    --seed ${seed} \
+    --output_dir ${output_dir_perturbed_SRC} \
+    --masked_vocab_path ${masked_vocab_path}
+fi
 
-# Unmask the data to generate perturbed sentences
-python -u unmask.py \
-  --masked_src_path ${output_dir_perturbed_SRC}/masked_df.csv \
-  --src_lang ${SRC_LANG} \
-  --seed ${seed} \
-  --output_dir ${output_dir_perturbed_SRC} \
-  --replacement_strategy ${replacement_strategy} \
-  --number_of_replacement ${number_of_replacement} \
-  --grouped_mask ${grouped_mask} \
-  --unmasking_model ${unmasking_model}
+if [ ! -f "${output_dir_perturbed_SRC}/unmasked_df.csv" ]; then
+  # Unmask the data to generate perturbed sentences
+  python -u unmask.py \
+    --masked_src_path ${output_dir_perturbed_SRC}/masked_df.csv \
+    --src_lang ${SRC_LANG} \
+    --seed ${seed} \
+    --output_dir ${output_dir_perturbed_SRC} \
+    --replacement_strategy ${replacement_strategy} \
+    --number_of_replacement ${number_of_replacement} \
+    --grouped_mask ${grouped_mask} \
+    --unmasking_model ${unmasking_model}
+fi
 
 # Translate original and perturbed sentences
 declare -a input_SRC_columns=("SRC" "SRC_perturbed" )
@@ -132,7 +140,7 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
     input_src_path=${output_dir_perturbed_SRC}/unmasked_df.csv
   fi
 
-  if [ "$qe_wmt21" = "True" ]; then
+  if [ "$MTmodel" = "qe_wmt21" ]; then
     # Preprocess input data
     python -u QE_WMT21_format_utils.py \
       --func "format_input" \
@@ -155,7 +163,7 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
       # Tokenize data
       for LANG in $SRC_LANG $TGT_LANG; do
 #        sacremoses -l $LANG tokenize -a < $INPUT.$LANG > $TMP/preprocessed.tok.$LANG
-        perl mosesdecoder/scripts/tokenizer/tokenizer.perl -threads 80 -a -l $LANG < $INPUT.$LANG > $TMP/preprocessed.tok.$LANG
+        perl ../mosesdecoder/scripts/tokenizer/tokenizer.perl -threads 80 -a -l $LANG < $INPUT.$LANG > $TMP/preprocessed.tok.$LANG
         python $BPE_ROOT/apply_bpe.py -c ${BPE} < $TMP/preprocessed.tok.$LANG > $TMP/preprocessed.tok.bpe.$LANG
       done
       # Apply bpe
@@ -170,7 +178,7 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
       grep ^P ${output_dir}/fairseq.out | cut -d- -f2- | sort -n | cut -f2- > ${output_dir}/log_prob.out
       # Post-process
 #      sed -r 's/(@@ )| (@@ ?$)//g' < ${output_dir}/mt.out | sacremoses -l $TGT_LANG detokenize > $OUTPUT
-      sed -r 's/(@@ )| (@@ ?$)//g' < ${output_dir}/mt.out | perl mosesdecoder/scripts/tokenizer/detokenizer.perl -l $TGT_LANG > $OUTPUT
+      sed -r 's/(@@ )| (@@ ?$)//g' < ${output_dir}/mt.out | perl ../mosesdecoder/scripts/tokenizer/detokenizer.perl -l $TGT_LANG > $OUTPUT
     elif [[ ($SRC_LANG == "en" && $TGT_LANG == "ja") || ($SRC_LANG == "en" && $TGT_LANG == "cs") ]]; then
       model_path=models/mbart50.ft.1n
       data_root=${TMP}
@@ -225,14 +233,15 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
       --tgt_lang ${TGT_LANG} \
       --tmp_dir ${TMP}
   else
-    python -u translate.py \
-      --input_path ${input_src_path} \
-      --output_dir ${output_dir} \
-      --beam ${beam} \
-      --seed ${seed} \
-      --batch_size ${batch_size} \
-      --trans_direction ${trans_direction} \
-      --input_SRC_column ${input_SRC_column} \
-      |& tee -a ${output_dir}/translate.log
+    echo "MT MODEL ${MTmodel} NOT AVAILABLE!!"
+#    python -u translate.py \
+#      --input_path ${input_src_path} \
+#      --output_dir ${output_dir} \
+#      --beam ${beam} \
+#      --seed ${seed} \
+#      --batch_size ${batch_size} \
+#      --trans_direction ${trans_direction} \
+#      --input_SRC_column ${input_SRC_column} \
+#      |& tee -a ${output_dir}/translate.log
   fi
 done

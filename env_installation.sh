@@ -16,7 +16,7 @@ pip install sentencepiece
 #conda install libgcc
 #conda install -c conda-forge gcc=12.1.0
 #conda install -c anaconda cudnn
-pip install spacy
+pip install "spacy<3.0.0"
 python3 -m spacy download en_core_web_sm
 python3 -m spacy download de_core_news_sm
 pip install edist
@@ -24,3 +24,22 @@ pip install jieba==0.42.1
 pip install fugashi==1.1.1
 pip install indic-nlp-library==0.81
 pip install unidic-lite
+
+cd ../
+
+git clone https://github.com/TuAnh23/mt_gender.git
+cd mt_gender
+./install.sh
+cd ../
+
+git clone https://github.com/clab/fast_align.git
+cd fast_align
+mkdir build
+cd build
+cmake ..
+make
+cd ../
+
+git clone https://github.com/moses-smt/mosesdecoder.git
+
+cd KIT_start

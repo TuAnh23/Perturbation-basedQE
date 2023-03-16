@@ -395,7 +395,7 @@ def moses_tokenize(lang, inlist):
             for line in inlist:
                 f.write(f"{line}\n")
 
-        tokeniser_script = "mosesdecoder/scripts/tokenizer/tokenizer.perl"
+        tokeniser_script = "../mosesdecoder/scripts/tokenizer/tokenizer.perl"
         perl_params = [tokeniser_script, '-l', lang, '-no-escape']
         with open(f"{tmp_folder}/outfile.txt", 'wb', 0) as fileout:
             with open(f"{tmp_folder}/infile.txt", 'r') as filein:

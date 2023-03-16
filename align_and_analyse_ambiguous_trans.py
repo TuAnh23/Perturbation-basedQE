@@ -60,15 +60,15 @@ def tercom_alignment(tokenized_original_sentences, tokenized_changed_sentences):
     (files edit_alignments.py, parse_pra_xml.py with slight modifications)
     """
     # Download tercom execution jar file if not yet exists
-    jar_path = "tercom-0.7.25/tercom.7.25.jar"
+    jar_path = "../tercom-0.7.25/tercom.7.25.jar"
     if not os.path.isfile(jar_path):
         response = requests.get("http://www.cs.umd.edu/~snover/tercom//tercom-0.7.25.tgz")
-        with open("tercom-0.7.25.tgz", "wb") as f:
+        with open("../tercom-0.7.25.tgz", "wb") as f:
             f.write(response.content)
 
         # Unzip the data
-        tar = tarfile.open("tercom-0.7.25.tgz", "r:gz")
-        tar.extractall('./')
+        tar = tarfile.open("../tercom-0.7.25.tgz", "r:gz")
+        tar.extractall('../')
         tar.close()
 
     # Perform alignment
