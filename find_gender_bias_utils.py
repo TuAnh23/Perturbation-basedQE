@@ -83,9 +83,12 @@ def main():
                     if qe_ok_bad_preds[sentence_index][gender_word_index] == "BAD":
                         nr_true_positives = nr_true_positives + 1
 
+        nr_bad = sum([x.count('BAD') for x in qe_ok_bad_preds], 0)
         wrong_gender_recall = nr_true_positives/nr_positives
+        wrong_gender_precision = nr_true_positives/nr_bad
         with open(args.output_path_eval_gender_bias, 'w') as f:
             f.write(f"wrong_gender_recall: {wrong_gender_recall}\n")
+            f.write(f"wrong_gender_precision (only as an indication): {wrong_gender_precision}\n")
             f.write(f"total number of predicted BAD labels: {nr_pred_bads}\n")
 
     else:
