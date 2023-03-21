@@ -109,10 +109,10 @@ if [[ ! -f ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${
 fi
 
 # Run quality estimation and save the predicted labels
-declare -a QE_methods=('nmt_log_prob' 'nr_effecting_src_words' 'wmt18_openkiwi' )
+declare -a QE_methods=('nmt_log_prob' 'nr_effecting_src_words' 'openkiwi_2.1.0' )
 for QE_method in ${QE_methods[@]}; do
   if [[ ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ]]; then
-    if [[ ${QE_method} == "wmt18_openkiwi" ]]; then
+    if [[ ${QE_method} == "openkiwi_2.1.0" ]]; then
       python -u tokenize_original.py \
         --original_translation_output_dir ${output_dir_original_SRC} \
         --dataset ${dataname} \

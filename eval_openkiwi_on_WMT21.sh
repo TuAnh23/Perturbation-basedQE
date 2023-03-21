@@ -16,7 +16,7 @@ dataname="WMT21_DA_test"
 SRC_LANG=${lang_pair:0:2}
 TGT_LANG=${lang_pair:3:2}
 
-QE_method="wmt18_openkiwi"
+QE_method="openkiwi_2.1.0"
 analyse_output_path="analyse_output/${dataname}_${SRC_LANG}2${TGT_LANG}_${QE_method}"
 data_root_dir="data"
 OUTPUT_dir=output/${dataname}_${lang_pair}
