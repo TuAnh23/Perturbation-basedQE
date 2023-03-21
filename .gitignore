@@ -23,3 +23,6 @@ notebooks/tmp_storages/*
 tercom-0.7.25/*
 
 *.tgz
+
+analyse_output/*
+notebooks/tercom-0.7.25/*
