@@ -33,6 +33,6 @@ for lang_pair in ${lang_pairs[@]}; do
   fi
   test_analyse_output_path="analyse_output/${testdataname}_${SRC_LANG}2${TGT_LANG}"
   test_analyse_output_path_per_setting=${test_analyse_output_path}/${mask_type}_${unmasking_model}
-  bash run_perturbation_and_translation_dev.sh ${testdataname} ${SRC_LANG} ${TGT_LANG} ${mask_type} ${unmasking_model}
-  bash run_quality_estimation_dev.sh ${testdataname} ${SRC_LANG} ${TGT_LANG} ${mask_type} ${unmasking_model} ${test_analyse_output_path_per_setting} ${alignment_tool} ${effecting_words_threshold} ${consistence_trans_portion_threshold} ${uniques_portion_for_noiseORperturbed_threshold}
+  bash run_perturbation_and_translation.sh ${testdataname} ${SRC_LANG} ${TGT_LANG} ${mask_type} ${unmasking_model}
+  bash run_quality_estimation.sh ${testdataname} ${SRC_LANG} ${TGT_LANG} ${mask_type} ${unmasking_model} ${test_analyse_output_path_per_setting} ${alignment_tool} ${effecting_words_threshold} ${consistence_trans_portion_threshold} ${uniques_portion_for_noiseORperturbed_threshold}
 done

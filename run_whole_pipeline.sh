@@ -71,26 +71,4 @@ for lang_pair in ${lang_pairs[@]}; do
     echo "-------------- BEST SETTING --------------" | tee -a ${analyse_output_path}/qe_hyperparam_tuning_${alignment_tool}.txt
     echo "mask_type: ${best_mask_type}, unmasking_models: ${best_unmasking_model}, QE_params: ${best_qe_params}, score: ${best_score}" | tee -a ${analyse_output_path}/qe_hyperparam_tuning_${alignment_tool}.txt
   done
-
-  ## Run the best hyperparams on the test set
-  #dataname="WMT21_DA_test"
-  #SRC_LANG="en"
-  #TGT_LANG="de"
-  #
-  #best_setting_str=$(tail -1 "${analyse_output_path}/qe_hyperparam_tuning_tercom.txt")
-  #best_mask_type=$(echo "${best_setting_str}" | awk -F'mask_type: ' '{print $2}' | awk -F',' '{print $1}')
-  #best_unmasking_model=$(echo "${best_setting_str}" | awk -F'unmasking_models: ' '{print $2}' | awk -F',' '{print $1}')
-  #best_qe_params=$(echo "${best_setting_str}" | awk -F'[()]' '{print $2}')
-  #
-  #
-  #effecting_words_threshold=$(echo "${best_qe_params}" | awk -F',' '{print $1}')
-  #consistence_trans_portion_threshold=$(echo "${best_qe_params}" | awk -F',' '{print $2}')
-  #uniques_portion_for_noiseORperturbed_threshold=$(echo "${best_qe_params}" | awk -F',' '{print $3}')
-  #
-  #
-  #analyse_output_path="analyse_output/${dataname}_${SRC_LANG}2${TGT_LANG}"
-  #analyse_output_path_per_setting=${analyse_output_path}/${best_mask_type}_${best_unmasking_model}
-  #bash run_perturbation_and_translation.sh ${dataname} ${SRC_LANG} ${TGT_LANG} ${best_mask_type} ${best_unmasking_model}
-  #bash run_quality_estimation.sh ${dataname} ${SRC_LANG} ${TGT_LANG} ${best_mask_type} ${best_unmasking_model} ${analyse_output_path_per_setting} ${effecting_words_threshold} ${consistence_trans_portion_threshold} ${uniques_portion_for_noiseORperturbed_threshold}
-
 done
