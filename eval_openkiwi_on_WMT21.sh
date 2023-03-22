@@ -16,11 +16,18 @@ dataname="WMT21_DA_test"
 SRC_LANG=${lang_pair:0:2}
 TGT_LANG=${lang_pair:3:2}
 
-QE_method="openkiwi_2.1.0"
+QE_method="openkiwi_wmt21"  # or "openkiwi_2.1.0"
 analyse_output_path="analyse_output/${dataname}_${SRC_LANG}2${TGT_LANG}_${QE_method}"
 data_root_dir="data"
 OUTPUT_dir=output/${dataname}_${lang_pair}
 output_dir_original_SRC=${OUTPUT_dir}/original
+
+if [[ ${QE_method} == "openkiwi_2.1.0" ]]; then
+  model_path="models/xlmr-en-de.ckpt"
+elif [[ ${QE_method} == "openkiwi_wmt21" ]]; then
+  model_path="models/updated_models/Task2/checkpoints/model_epoch=01-val_WMT19_MCC+PEARSON=1.30.ckpt"
+fi
+
 
 mkdir -p ${analyse_output_path}
 
@@ -34,7 +41,7 @@ if [[ ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ]]; then
   conda activate openkiwi
   python -u openkiwi_qe.py \
     --original_translation_output_dir ${output_dir_original_SRC} \
-    --model_path "models/xlmr-en-de.ckpt" \
+    --model_path ${model_path} \
     --label_output_path ${analyse_output_path}/pred_labels_${QE_method}.pkl
   conda activate KIT_start
 fi

@@ -4,6 +4,11 @@ Using supervised predictor-estimator model
 https://github.com/Unbabel/OpenKiwi/releases/
 https://unbabel.github.io/OpenKiwi/reproduce.html
 https://unbabel.github.io/OpenKiwi/usage.html#training-and-pretraining
+
+If using the wmt21 baseline model, add this line:
+`self.config.model_name = "models/updated_models/xlm-roberta-base-finetuned"`
+to line 149 in
+/home/tdinh/miniconda3/envs/openkiwi/lib/python3.8/site-packages/kiwi/systems/encoders/xlmroberta.py
 """
 
 from kiwi.lib.predict import load_system
