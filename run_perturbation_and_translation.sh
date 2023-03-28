@@ -7,6 +7,7 @@ which python
 export CUDA_VISIBLE_DEVICES=1
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
+export HF_HOME=/project/OML/tdinh/.cache/huggingface
 
 nvidia-smi
 
@@ -41,7 +42,7 @@ else
 fi
 
 if [ -z "$6" ]; then
-  MTmodel="qe_wmt21"
+  MTmodel="qe_wmt21"  # LLM, qe_wmt21
 else
   MTmodel=$6
 fi
@@ -70,17 +71,23 @@ else
   masked_vocab_path="None"
 fi
 
-OUTPUT_dir=output/${dataname}_${trans_direction}
+if [[ ${dataname} == "WMT21_DA"* ]]; then
+  # Always uses qe_wmt21 MT models for consistent with gold label, so no need to specify
+  OUTPUT_dir=output/${dataname}_${trans_direction}
+else
+  OUTPUT_dir=output/${dataname}_${trans_direction}_${MTmodel}
+fi
+
 TMP_dir=/export/data1/tdinh/${dataname}_${trans_direction}
 output_dir_original_SRC=${OUTPUT_dir}/original
 output_dir_perturbed_SRC=${OUTPUT_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/${number_of_replacement}replacements/seed${seed}
 TMP_dir_original_SRC=${TMP_dir}/original
 TMP_dir_perturbed_SRC=${TMP_dir}/${replacement_strategy}/beam${beam}_perturb${mask_type}/${number_of_replacement}replacements/seed${seed}
 
-if [ -d "$output_dir_perturbed_SRC" ]; then
-  echo "Output files exists. Skip perturbation and translation."
-  exit 0
-fi
+#if [ -d "$output_dir_perturbed_SRC" ]; then
+#  echo "Output files exists. Skip perturbation and translation."
+#  exit 0
+#fi
 
 mkdir -p ${output_dir_original_SRC}
 mkdir -p ${output_dir_perturbed_SRC}
@@ -88,14 +95,16 @@ mkdir -p ${TMP_dir_original_SRC}
 mkdir -p ${TMP_dir_perturbed_SRC}
 
 # Process the data
-python -u process_src_data.py \
-  --data_root_dir ${data_root_dir} \
-  --src_lang ${SRC_LANG} \
-  --tgt_lang ${TGT_LANG} \
-  --dataname ${dataname} \
-  --seed ${seed} \
-  --output_dir ${output_dir_original_SRC} \
-  --dev ${dev}
+if [ ! -f "${output_dir_original_SRC}/src_df.csv" ]; then
+  python -u process_src_data.py \
+    --data_root_dir ${data_root_dir} \
+    --src_lang ${SRC_LANG} \
+    --tgt_lang ${TGT_LANG} \
+    --dataname ${dataname} \
+    --seed ${seed} \
+    --output_dir ${output_dir_original_SRC} \
+    --dev ${dev}
+fi
 
 if [ ! -f "${output_dir_perturbed_SRC}/masked_df.csv" ]; then
   # Mask the data
@@ -129,15 +138,14 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
     output_dir=${output_dir_original_SRC}
     TMP=${TMP_dir_original_SRC}
     input_src_path=${output_dir_original_SRC}/src_df.csv
-
-    if [ -f "${output_dir}/translations.csv" ]; then
-      continue
-    fi
-
   else
     output_dir=${output_dir_perturbed_SRC}
     TMP=${TMP_dir_perturbed_SRC}
     input_src_path=${output_dir_perturbed_SRC}/unmasked_df.csv
+  fi
+
+  if [ -f "${output_dir}/translations.csv" ]; then
+      continue
   fi
 
   if [ "$MTmodel" = "qe_wmt21" ]; then
@@ -223,6 +231,38 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
       sed -r 's/ //g; s/▁/ /g; s/^[[:space:]]*//' < ${output_dir}/mt.out > ${output_dir}/trans_sentences.txt
     fi
 
+    # Put the translation to the dataframe
+    python -u QE_WMT21_format_utils.py \
+      --func "format_translation_file" \
+      --input_src_path ${input_src_path} \
+      --output_dir ${output_dir} \
+      --input_SRC_column ${input_SRC_column} \
+      --src_lang ${SRC_LANG} \
+      --tgt_lang ${TGT_LANG} \
+      --tmp_dir ${TMP}
+  elif [[ ${MTmodel} == "LLM" ]]; then
+    shot=0
+    LLM_model=google/flan-ul2  # google/flan-t5-small, google/flan-ul2
+    # Preprocess input data
+    python -u QE_WMT21_format_utils.py \
+      --func "format_input" \
+      --input_src_path ${input_src_path} \
+      --output_dir ${output_dir} \
+      --input_SRC_column ${input_SRC_column} \
+      --src_lang ${SRC_LANG} \
+      --tgt_lang ${TGT_LANG} \
+      --tmp_dir ${TMP}
+
+    source /home/skoneru/miniconda3/bin/activate llm
+    python llm_eval.py \
+      --input_file ${output_dir}/input.${SRC_LANG} \
+      --hyp_output_file ${output_dir}/trans_sentences.txt \
+      --tokenized_hyp_output_file ${output_dir}/mt.out \
+      --logprobs_hyp_output_file ${output_dir}/log_prob.out \
+      --target_file ${output_dir}/input.${TGT_LANG} \
+      --model $LLM_model \
+      --shot $shot
+    source /home/tdinh/miniconda3/bin/activate KIT_start
     # Put the translation to the dataframe
     python -u QE_WMT21_format_utils.py \
       --func "format_translation_file" \

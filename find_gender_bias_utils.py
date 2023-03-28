@@ -80,7 +80,8 @@ def main():
                 nr_positives = nr_positives + len(gender_word_indices)
 
                 for gender_word_index in gender_word_indices:
-                    if qe_ok_bad_preds[sentence_index][gender_word_index] == "BAD":
+                    if (gender_word_index < len(qe_ok_bad_preds[sentence_index]) and
+                            qe_ok_bad_preds[sentence_index][gender_word_index] == "BAD"):
                         nr_true_positives = nr_true_positives + 1
 
         nr_bad = sum([x.count('BAD') for x in qe_ok_bad_preds], 0)

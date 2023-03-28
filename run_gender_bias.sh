@@ -7,12 +7,13 @@ which python
 export CUDA_VISIBLE_DEVICES=1
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
+export HF_HOME=/project/OML/tdinh/.cache/huggingface
 
 nvidia-smi
 
 #declare -a lang_pairs=("en2de" "ro2en" "et2en" "en2zh" )
 lang_pair="en2de"
-MTmodel="qe_wmt21"
+MTmodel="LLM"  ## "LLM" "qe_wmt21"
 
 dataname="winoMT"
 SRC_LANG=${lang_pair:0:2}
@@ -42,7 +43,7 @@ elif [[ (${lang_pair} == "en2zh") || (${lang_pair} == "en2ja") ]]; then
   nmt_log_prob_threshold=0.6
 fi
 bash run_perturbation_and_translation.sh ${dataname} ${SRC_LANG} ${TGT_LANG} ${mask_type} ${unmasking_model} ${MTmodel}
-OUTPUT_dir=output/${dataname}_${lang_pair}
+OUTPUT_dir=output/${dataname}_${lang_pair}_${MTmodel}
 output_dir_original_SRC=${OUTPUT_dir}/original
 
 
@@ -83,8 +84,6 @@ src_word_level_eval="False"
 use_src_tgt_alignment="False"
 data_root_dir="data"
 output_root_path="output"
-OUTPUT_dir=${output_root_path}/${dataname}_${lang_pair}
-output_dir_original_SRC=${OUTPUT_dir}/original
 seed=0
 replacement_strategy="masking_language_model_${unmasking_model}"
 number_of_replacement=30
@@ -99,6 +98,7 @@ if [[ ! -f ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${
     --replacement_strategy ${replacement_strategy} \
     --number_of_replacement ${number_of_replacement} \
     --dataname ${dataname} \
+    --MTmodel ${MTmodel} \
     --seed ${seed} \
     --beam ${beam} \
     --mask_type ${mask_type} \
@@ -149,7 +149,7 @@ for QE_method in ${QE_methods[@]}; do
     fi
   fi
 
-  echo "Eval recall on gender bias by QE"
+  echo "Eval gender bias by QE"
   python -u find_gender_bias_utils.py \
     --function "eval_gender_bias" \
     --gender_pred_path ${analyse_output_path}/gender_pred.csv \

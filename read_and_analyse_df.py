@@ -672,6 +672,7 @@ def main():
     parser.add_argument('--beam', type=int, default=5)
     parser.add_argument('--mask_type', type=str)
     parser.add_argument('--output_dir', type=str)
+    parser.add_argument('--MTmodel', type=str)
     parser.add_argument('--winoMT', type=str_to_bool, default=False)
     parser.add_argument('--use_src_tgt_alignment', type=str_to_bool)
     parser.add_argument('--tokenize_sentences', type=str_to_bool)
@@ -690,14 +691,17 @@ def main():
         args.mask_type = 'pronoun'
         args.number_of_replacement = 1
 
-    output = read_output_df(df_root_path=args.df_root_path, data_root_path=args.data_root_path,
-                            dataset=f"{args.dataname}_{args.src_lang}2{args.tgt_lang}",
-                            src_lang=args.src_lang, tgt_lang=args.tgt_lang, mask_type=args.mask_type,
-                            beam=args.beam, replacement_strategy=args.replacement_strategy, ignore_case=False,
-                            no_of_replacements=args.number_of_replacement, seed=args.seed,
-                            spacy_model=None, w2v_model=None,
-                            use_src_tgt_alignment=args.use_src_tgt_alignment, tokenize_sentences=args.tokenize_sentences,
-                            winoMT=args.winoMT, analyse_feature=args.analyse_feature)
+    output = read_output_df(
+        df_root_path=args.df_root_path, data_root_path=args.data_root_path,
+        dataset=f"{args.dataname}_{args.src_lang}2{args.tgt_lang}" if "WMT21_DA" in args.dataname
+                else f"{args.dataname}_{args.src_lang}2{args.tgt_lang}_{args.MTmodel}",
+        src_lang=args.src_lang, tgt_lang=args.tgt_lang, mask_type=args.mask_type,
+        beam=args.beam, replacement_strategy=args.replacement_strategy, ignore_case=False,
+        no_of_replacements=args.number_of_replacement, seed=args.seed,
+        spacy_model=None, w2v_model=None,
+        use_src_tgt_alignment=args.use_src_tgt_alignment, tokenize_sentences=args.tokenize_sentences,
+        winoMT=args.winoMT, analyse_feature=args.analyse_feature
+    )
 
     output.to_pickle(f'{args.output_dir}/analyse_{args.dataname}_{args.src_lang}2{args.tgt_lang}_{args.mask_type}.pkl')
 
