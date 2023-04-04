@@ -69,7 +69,7 @@ if [[ ! -f "${analyse_output_path}/gender_pred.csv" ]]; then
   echo "Evaluating ${TGT_LANG} into ${analyse_output_path}/winoMT_eval.log"
   cd ../mt_gender/src
   export FAST_ALIGN_BASE=/project/OML/tdinh/fast_align
-  ../scripts/evaluate_language.sh $corpus_fn ${TGT_LANG} ${MTmodel} | tee ${analyse_output_path}/winoMT_eval.log
+  ../scripts/evaluate_language.sh $corpus_fn ${TGT_LANG} ${MTmodel} 2>&1 | tee ${analyse_output_path}/winoMT_eval.log
   cd ../../KIT_start
   cp ../mt_gender/data/human/qe_wmt21/de/de.pred.csv ${analyse_output_path}/gender_pred.csv
 fi
