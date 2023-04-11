@@ -11,7 +11,7 @@ export HF_HOME=/project/OML/tdinh/.cache/huggingface
 
 nvidia-smi
 
-declare -a lang_pairs=("en2de" "ro2en" "et2en" "en2zh" )
+declare -a lang_pairs=("en2de" "en2zh" )
 
 for lang_pair in ${lang_pairs[@]}; do
   SRC_LANG=${lang_pair:0:2}

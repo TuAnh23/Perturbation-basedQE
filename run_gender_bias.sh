@@ -11,9 +11,14 @@ export HF_HOME=/project/OML/tdinh/.cache/huggingface
 
 nvidia-smi
 
+if [ -z "$1" ]; then
+  MTmodel="LLM"  ## "LLM" or "qe_wmt21"
+else
+  MTmodel=$1
+fi
+
 #declare -a lang_pairs=("en2de" "ro2en" "et2en" "en2zh" )
 lang_pair="en2de"
-MTmodel="LLM"  ## "LLM" "qe_wmt21"
 
 dataname="winoMT"
 SRC_LANG=${lang_pair:0:2}
