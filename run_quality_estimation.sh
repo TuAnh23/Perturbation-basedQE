@@ -141,7 +141,7 @@ if [ "$use_src_tgt_alignment" = "True" ]; then
 fi
 
 python -u read_and_analyse_df.py \
-  --output_root_path ${output_root_path} \
+  --df_root_path ${output_root_path} \
   --data_root_path ${data_root_dir} \
   --src_lang ${SRC_LANG} \
   --tgt_lang ${TGT_LANG} \
