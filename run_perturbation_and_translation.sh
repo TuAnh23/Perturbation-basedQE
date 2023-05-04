@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 export HF_HOME=/project/OML/tdinh/.cache/huggingface
@@ -51,7 +51,7 @@ dev=False
 grouped_mask=False
 trans_direction="${SRC_LANG}2${TGT_LANG}"
 data_root_dir="data"
-batch_size=100
+batch_size=200
 seed=0
 replacement_strategy="masking_language_model_${unmasking_model}"
 number_of_replacement=30

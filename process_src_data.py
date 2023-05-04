@@ -5,6 +5,8 @@ For WMT QE data, also the add the provided tokenized SRC (column tokenized_SRC)
 """
 
 import argparse
+import json
+
 import pandas as pd
 from html import unescape
 import os
@@ -29,7 +31,7 @@ def main():
     parser.add_argument('--tgt_lang', type=str, default="de")
     parser.add_argument('--dataname', type=str, default="MuST-SHE-en2fr",
                         help="[MuST-SHE-en2fr|Europarl-en2de|IWSLT15-en2vi|wmt19-newstest2019-en2de|"
-                             "masked_covost2_for_en2de|cherry-picked]")
+                             "masked_covost2_for_en2de|cherry-picked|mucow]")
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--output_dir', type=str)
     parser.add_argument('--dev', type=str_to_bool, help="Whether to create a tiny dataset for testing")
@@ -73,6 +75,18 @@ def main():
         src_df = pd.read_csv(
             "../mt_gender/data/aggregates/en.txt", sep='\t', header=None, names=['gender', 'x', 'SRC', 'noun']
         )[['SRC']]
+
+    elif args.dataname == 'mucow':
+        assert args.src_lang == 'en'
+
+        # Test data at https://github.com/Helsinki-NLP/MuCoW
+        with open("../MuCoW/WMT2019/translation test suite/txt/en-de.text.txt") as f:
+            en_sentences = f.readlines()
+            en_sentences = [line.rstrip() for line in en_sentences]
+        with open("../MuCoW/WMT2019/translation test suite/txt/en-de.ref.txt") as f:
+            de_sentences = f.readlines()
+            de_sentences = [line.rstrip() for line in de_sentences]
+        src_df = pd.DataFrame(data={'SRC': en_sentences, 'REF': de_sentences})
 
     elif args.dataname == 'wmt19-newstest2019-en2de':
         assert args.src_lang == 'en'

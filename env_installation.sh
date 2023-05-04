@@ -41,6 +41,7 @@ make
 cd ../
 
 git clone https://github.com/moses-smt/mosesdecoder.git
+git clone https://github.com/Helsinki-NLP/MuCoW.git
 
 cd KIT_start
 
