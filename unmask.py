@@ -5,7 +5,7 @@ import gensim.downloader as api
 import logging
 from transformers import pipeline
 from nltk.stem.snowball import SnowballStemmer
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from utils import str_to_bool, set_seed
 
 logging.basicConfig(
@@ -228,6 +228,15 @@ def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, rep
     # Do not do it within the loop for better GPU efficiency
     masked_dataset = MaskedSentencesDataset(masked_src_df['SRC_masked'].values)
     masked_src_df['raw_unmasks_bert'] = replacement_model(masked_dataset, top_k=40)
+
+    # dataloader = DataLoader(masked_dataset, batch_size=500)
+    #
+    # all_outputs = []
+    # for batch in dataloader:
+    #     results = replacement_model(batch, top_k=40, batch_size=500)
+    #     for result in results:
+    #         all_outputs.append(result)
+    # masked_src_df['raw_unmasks_bert'] = all_outputs
 
     output_df = pd.DataFrame(
         columns=list(masked_src_df.columns) + ['Replacement rank', f"perturbed_word", f"SRC_perturbed"]
