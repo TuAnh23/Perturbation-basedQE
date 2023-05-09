@@ -21,4 +21,10 @@ Experiments on detecting wrong gender token output from MT systems on WinoMT dat
 ```bash
 bash run_gender_bias.sh ${MTmodel}
 ```
+
+Experiments on detecting wrong WSD token output from MT systems on MuCoW data
+```bash
+bash run_WSD.sh ${MTmodel}
+```
+
 `MTmodel` can be `LLM`, i.e., large language model performing translation by prompting, or `qe_wmt21`, i.e., the in-domain MT models provided in the WMT21 QE shared task
