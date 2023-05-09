@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=5
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 export HF_HOME=/project/OML/tdinh/.cache/huggingface
@@ -50,11 +50,17 @@ fi
 bash run_perturbation_and_translation.sh ${dataname} ${SRC_LANG} ${TGT_LANG} ${mask_type} ${unmasking_model} ${MTmodel}
 OUTPUT_dir=output/${dataname}_${lang_pair}_${MTmodel}
 output_dir_original_SRC=${OUTPUT_dir}/original
+output_dir_original_SRC=$(realpath $output_dir_original_SRC)
 
 
 
-
-
+# Run MuCoW WSD labels
+cd "../MuCoW/WMT2019/translation test suite" || exit
+python evaluate.py \
+  --lgpair ${SRC_LANG}-${TGT_LANG} \
+  --rawtranslations ${output_dir_original_SRC}/trans_sentences.txt \
+  --output_path ${analyse_output_path}/wsd_labels.csv | tee ${analyse_output_path}/MuCoW_eval.log
+cd ../../../KIT_start || exit
 
 
 
@@ -130,17 +136,13 @@ for QE_method in ${QE_methods[@]}; do
     fi
   fi
 
-  echo "Eval gender bias by QE"
-  python -u find_gender_bias_utils.py \
-    --function "eval_gender_bias" \
-    --gender_pred_path ${analyse_output_path}/gender_pred.csv \
-    --winoMT_data_path ${corpus_fn} \
+  echo "Eval WSD error by QE"
+  python -u find_wsd_utils.py \
+    --wsd_label_path ${analyse_output_path}/wsd_labels.csv \
     --qe_pred_labels_path ${analyse_output_path}/pred_labels_${QE_method}.pkl \
-    --output_path_eval_gender_bias ${analyse_output_path}/wrong_gender_recall_${QE_method}.txt
+    --output_path_eval_wsd_error ${analyse_output_path}/wrong_wsd_recall_${QE_method}.txt
 
   echo "QE method ${QE_method}"
-  head ${analyse_output_path}/wrong_gender_recall_${QE_method}.txt
+  head ${analyse_output_path}/wrong_wsd_recall_${QE_method}.txt
   echo "-------------------------------------------------"
 done
-
-

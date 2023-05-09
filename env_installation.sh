@@ -41,7 +41,7 @@ make
 cd ../
 
 git clone https://github.com/moses-smt/mosesdecoder.git
-git clone https://github.com/Helsinki-NLP/MuCoW.git
+git clone https://github.com/TuAnh23/MuCoW.git
 
 cd KIT_start
 
@@ -50,3 +50,5 @@ conda activate openkiwi
 pip install openkiwi
 pip install protobuf==3.20.1
 conda install pandas=1.3
+
+pip install "spacy-stanza<0.3.0"
