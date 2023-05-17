@@ -56,19 +56,18 @@ def main():
                                         args.perturbed_trans_df_path, task=args.task,
                                         original_translation_output_dir=args.original_translation_output_dir)
     elif args.method == 'nr_effecting_src_words':
-        pred_labels, src_tgt_influence = nr_effecting_src_words_eval(
+        pred_labels, src_tgt_influence_clean = nr_effecting_src_words_eval(
             args.perturbed_trans_df_path, args.effecting_words_threshold,
             task=args.task,
             consistence_trans_portion_threshold=args.consistence_trans_portion_threshold,
             uniques_portion_for_noiseORperturbed_threshold=args.uniques_portion_for_noiseORperturbed_threshold,
             no_effecting_words_portion_threshold=args.no_effecting_words_portion_threshold,
             alignment_tool=args.alignment_tool,
-            return_details=True
+            return_details=True, clean_up_return_details=True
         )
 
         if args.src_tgt_influence_output_path is not None:
-            with open(args.src_tgt_influence_output_path, 'wb') as f:
-                pickle.dump(src_tgt_influence, f)
+            src_tgt_influence_clean.to_pickle(args.src_tgt_influence_output_path)
     else:
         raise RuntimeError(f"QE method {args.method} not available")
 

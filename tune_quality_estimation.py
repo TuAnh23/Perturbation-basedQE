@@ -17,6 +17,7 @@ from sacremoses import MosesTokenizer
 from multiprocessing import Pool, cpu_count
 from itertools import repeat
 from utils import load_text_file
+import re
 
 
 def load_gold_labels(dataset, data_root_path, src_lang, tgt_lang, task):
@@ -161,14 +162,23 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
                                 uniques_portion_for_noiseORperturbed_threshold=0.4,
                                 no_effecting_words_portion_threshold=0.8,
                                 keep_unknown=False, return_details=False,
-                                alignment_tool='Levenshtein'):
+                                alignment_tool='Levenshtein',
+                                clean_up_return_details=False):
     """
     *_word_level_eval by using nr_effecting_src_words
     return_details: if False, return only the word predicted tag. if True, also returns the list of SRC words that
                     effect the translated words
+    clean_up_return_details: if not True, then return the raw details that can be used directly to detect BAD word
+        indices {tgt_word_inx: {'no_effecting_words': [src_word_1, src_word_2], effecting_words[src_word_3, src_word_4]},
+        where src_word still have the uniquify tags
+        (when there are 2 same src words in a sentence).
+        If True then clean up: return a dataframe with columns
+        [Sentence_idx, Target_word, Target_word_idx, OK/BAD, Effecting_src_words]
+        remove uniquify tags, only report the effecting words
     Returns:
         The flattened predictions
     """
+
     if task == 'trans_word_level_eval':
         align_type = "trans-only"
     elif task == 'src_word_level_eval':
@@ -178,6 +188,8 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
 
     word_tag = []
     details = []  # the effecting and no-effecting SRC words to every translated words
+    clean_details_cols = ['Sentence_idx', 'Target_word_idx', 'Target_word', 'OK/BAD', 'Effecting_src_words']
+    clean_details = pd.DataFrame(columns=clean_details_cols) # the effecting SRC words to every translated words
     perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
 
     # Perform alignment here at once for efficiency
@@ -213,13 +225,35 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
         #                       original_trans_length if task == 'trans_word_level_eval' else original_src_length)]
         word_tag.append(sentence_word_tags)
         if return_details:
-            details.append(tgt_src_effects)
+            if clean_up_return_details:
+                tmp_clean_details = pd.DataFrame(columns=clean_details_cols)
+                tmp_clean_details['Target_word_idx'] = tgt_src_effects.keys()
+                tmp_clean_details['Target_word'] = tmp_clean_details['Target_word_idx'].apply(
+                    lambda x: sentence_df['tokenized_SRC-Trans'].values[0][x]
+                )
+                tmp_clean_details['Effecting_src_words'] = tgt_src_effects.values()
+                tmp_clean_details['OK/BAD'] = sentence_word_tags
+                tmp_clean_details['Sentence_idx'] = SRC_original_idx
+
+                # Remove the uniquify tags from src_words
+                tmp_clean_details['Effecting_src_words'] = \
+                    tmp_clean_details['Effecting_src_words'].apply(
+                        lambda x: [re.sub(r"_\d+$", "", i) for i in x['effecting_words']]
+                    )
+
+                # Append to the final dataframe
+                clean_details = pd.concat([clean_details, tmp_clean_details], ignore_index=True)
+            else:
+                details.append(tgt_src_effects)
 
     if not keep_unknown:
         word_tag = replace_unknown(word_tag)
 
     if return_details:
-        return word_tag, details
+        if clean_up_return_details:
+            return word_tag, clean_details
+        else:
+            return word_tag, details
     else:
         return word_tag
 
