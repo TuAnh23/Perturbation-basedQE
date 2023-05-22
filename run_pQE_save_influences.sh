@@ -20,10 +20,15 @@ else
   MTmodel=$1
 fi
 
+if [ -z "$2" ]; then
+  dataname="winoMT"
+else
+  dataname=$2
+fi
+
 #declare -a lang_pairs=("en2de" "ro2en" "et2en" "en2zh" )
 lang_pair="en2de"
 
-dataname="winoMT"
 SRC_LANG=${lang_pair:0:2}
 TGT_LANG=${lang_pair:3:2}
 
@@ -54,6 +59,21 @@ bash run_perturbation_and_translation.sh ${dataname} ${SRC_LANG} ${TGT_LANG} ${m
 OUTPUT_dir=output/${dataname}_${lang_pair}_${MTmodel}
 output_dir_original_SRC=${OUTPUT_dir}/original
 
+
+# Save the tokenized original src and trans
+if [[ ! -f ${analyse_output_path}/tok_src.${SRC_LANG} ]]; then
+  python -u tokenization.py \
+    --text_file_path ${output_dir_original_SRC}/input.${SRC_LANG} \
+    --lang ${SRC_LANG} \
+    --output_tok_path ${analyse_output_path}/tok_src.${SRC_LANG}
+fi
+
+if [[ ! -f ${analyse_output_path}/tok_trans.${TGT_LANG} ]]; then
+  python -u tokenization.py \
+    --text_file_path ${output_dir_original_SRC}/trans_sentences.txt \
+    --lang ${TGT_LANG} \
+    --output_tok_path ${analyse_output_path}/tok_trans.${TGT_LANG}
+fi
 
 
 # Run quality estimation
@@ -91,7 +111,7 @@ fi
 QE_method='nr_effecting_src_words'
 echo "-------------------------------------------------"
 if [[ ( ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ) ||
-    (! -f ${analyse_output_path}/src_tgt_influence) ]]; then
+    (! -f ${analyse_output_path}/src_tgt_influence.pkl) ]]; then
   python -u quality_estimation.py \
     --perturbed_trans_df_path ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${mask_type}.pkl \
     --original_translation_output_dir ${output_dir_original_SRC} \
