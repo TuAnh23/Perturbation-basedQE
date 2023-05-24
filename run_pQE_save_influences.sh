@@ -127,5 +127,6 @@ if [[ ( ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ) ||
     --uniques_portion_for_noiseORperturbed_threshold ${uniques_portion_for_noiseORperturbed_threshold} \
     --alignment_tool ${alignment_tool} \
     --label_output_path ${analyse_output_path}/pred_labels_${QE_method}.pkl \
-    --src_tgt_influence_output_path ${analyse_output_path}/src_tgt_influence.pkl
+    --src_tgt_influence_output_path ${analyse_output_path}/src_tgt_influence.pkl \
+    --include_direct_influence "True"
 fi

@@ -163,7 +163,8 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
                                 no_effecting_words_portion_threshold=0.8,
                                 keep_unknown=False, return_details=False,
                                 alignment_tool='Levenshtein',
-                                clean_up_return_details=False):
+                                clean_up_return_details=False,
+                                include_direct_influence=False):
     """
     *_word_level_eval by using nr_effecting_src_words
     return_details: if False, return only the word predicted tag. if True, also returns the list of SRC words that
@@ -214,6 +215,7 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
             consistence_trans_portion_threshold=consistence_trans_portion_threshold,
             uniques_portion_for_noiseORperturbed_threshold=uniques_portion_for_noiseORperturbed_threshold,
             alignment_tool=alignment_tool,
+            include_direct_influence=include_direct_influence
         )
         bad_words = find_bad_word(tgt_src_effects, effecting_words_threshold)
         # ok_words = find_ok_word(tgt_src_effects,

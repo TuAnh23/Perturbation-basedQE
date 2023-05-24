@@ -5,6 +5,7 @@ import argparse
 import pandas as pd
 from tune_quality_estimation import nr_effecting_src_words_eval, nmt_log_prob_eval
 import pickle
+from utils import str_to_bool
 
 
 def main():
@@ -46,6 +47,9 @@ def main():
     parser.add_argument('--label_output_path', type=str)
     parser.add_argument('--src_tgt_influence_output_path', type=str,
                         help='Only available for method `nr_effecting_src_words`', default=None)
+    parser.add_argument('--include_direct_influence', type=str_to_bool,
+                        help='Whether to include the direct source word as effecting_src_words',
+                        default=False)
 
     args = parser.parse_args()
     print(args)
@@ -63,7 +67,8 @@ def main():
             uniques_portion_for_noiseORperturbed_threshold=args.uniques_portion_for_noiseORperturbed_threshold,
             no_effecting_words_portion_threshold=args.no_effecting_words_portion_threshold,
             alignment_tool=args.alignment_tool,
-            return_details=True, clean_up_return_details=True
+            return_details=True, clean_up_return_details=True,
+            include_direct_influence=args.include_direct_influence
         )
 
         if args.src_tgt_influence_output_path is not None:

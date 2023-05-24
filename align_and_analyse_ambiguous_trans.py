@@ -401,6 +401,7 @@ def analyse_single_sentence(sentence_df,
                             consistence_trans_portion_threshold=0.8,
                             uniques_portion_for_noiseORperturbed_threshold=0.4,
                             alignment_tool='Levenshtein',
+                            include_direct_influence=False
                             ):
     """
     Single sentence, different perturbed words, different replacements.
@@ -487,6 +488,8 @@ def analyse_single_sentence(sentence_df,
 
         for original_word, collected_result in collect_results.items():
             if word in collected_result['words_with_unstable_trans']:
+                effect_words.append(original_word)
+            elif word in collected_result['perturbed_or_noise_words'] and include_direct_influence:
                 effect_words.append(original_word)
             elif word in collected_result['words_with_consistent_trans']:
                 no_effect_words.append(original_word)
