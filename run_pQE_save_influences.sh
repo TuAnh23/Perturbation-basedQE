@@ -62,6 +62,7 @@ output_dir_original_SRC=${OUTPUT_dir}/original
 
 # Save the tokenized original src and trans
 if [[ ! -f ${analyse_output_path}/tok_src.${SRC_LANG} ]]; then
+  cp ${output_dir_original_SRC}/input.${SRC_LANG} ${analyse_output_path}/src.${SRC_LANG}
   python -u tokenization.py \
     --text_file_path ${output_dir_original_SRC}/input.${SRC_LANG} \
     --lang ${SRC_LANG} \
@@ -69,6 +70,7 @@ if [[ ! -f ${analyse_output_path}/tok_src.${SRC_LANG} ]]; then
 fi
 
 if [[ ! -f ${analyse_output_path}/tok_trans.${TGT_LANG} ]]; then
+  cp ${output_dir_original_SRC}/trans_sentences.txt ${analyse_output_path}/trans.${TGT_LANG}
   python -u tokenization.py \
     --text_file_path ${output_dir_original_SRC}/trans_sentences.txt \
     --lang ${TGT_LANG} \
