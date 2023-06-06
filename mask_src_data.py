@@ -6,6 +6,7 @@ import random
 import logging
 import numpy as np
 from sacremoses import MosesTokenizer, MosesDetokenizer
+from tokenization import perform_tokenization
 from utils import set_seed, none_or_str
 import copy
 from sklearn.feature_extraction.text import CountVectorizer
@@ -184,18 +185,23 @@ def multiple_per_sentence_mask(src_df, masked_word_type, src_lang, masked_vocab=
         # Have to give the list of occupations or country words
         assert masked_vocab is not None
 
-    tokenizer = MosesTokenizer(lang=src_lang)
+    # TODO: careful when the src language is not en
     detokenizer = MosesDetokenizer(lang=src_lang)
 
-    masked_data = pd.DataFrame(columns=['SRC_original_idx', 'SRC', 'SRC_masked', 'original_word', 'original_word_tag'])
+    masked_data = pd.DataFrame(
+        columns=['SRC_original_idx', 'SRC', 'SRC_masked', 'original_word', 'original_word_idx' 'original_word_tag']
+    )
+
+    if 'tokenized_SRC' in src_df.columns:
+        src_df['tokenized_SRC'] = src_df['tokenized_SRC'].apply(lambda x: x.split())
+    else:
+        src_df['tokenized_SRC'] = perform_tokenization(src_lang, src_df['SRC'].tolist())
 
     for src_idx, src_row in src_df.iterrows():
-        if 'tokenized_SRC' in src_df.columns:
-            tokenized_src = src_row['tokenized_SRC'].split()
-        else:
-            tokenized_src = tokenizer.tokenize(src_row['SRC'], escape=False, aggressive_dash_splits=False)
+        tokenized_src = src_row['tokenized_SRC']
         pos_tags = nltk.pos_tag(tokenized_src)
         original_words = []
+        original_words_idx = []
         original_words_tags = []
         masked_sentences = []
         for i, word_tag in enumerate(pos_tags):
@@ -210,17 +216,20 @@ def multiple_per_sentence_mask(src_df, masked_word_type, src_lang, masked_vocab=
                     detokenizer.detokenize(masked_tokenized)
                 )
                 original_words.append(word)
+                original_words_idx.append(i)
                 original_words_tags.append(pos_tag)
         single_sentence_df = pd.DataFrame()
         single_sentence_df['SRC_masked'] = masked_sentences
         single_sentence_df['SRC'] = src_row['SRC']
         single_sentence_df['SRC_original_idx'] = src_idx
         single_sentence_df['original_word'] = original_words
+        single_sentence_df['original_word_idx'] = original_words_idx
         single_sentence_df['original_word_tag'] = original_words_tags
 
         masked_data = pd.concat([masked_data, single_sentence_df], axis=0, ignore_index=True)
 
     masked_data['SRC_masked_index'] = masked_data.index
+    masked_data['original_word_idx'] = masked_data['original_word_idx'].astype(int)
 
     return masked_data
 

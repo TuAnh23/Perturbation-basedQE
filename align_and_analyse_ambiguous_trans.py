@@ -18,6 +18,7 @@ import collect_tercom_alignments
 from xml.sax.saxutils import escape
 from multiprocessing import Pool, cpu_count
 from itertools import repeat
+from collections import OrderedDict
 
 pd.options.mode.chained_assignment = None
 
@@ -429,9 +430,11 @@ def analyse_single_sentence(sentence_df,
 
     groups_by_perturbed_word = sentence_df.groupby("SRC_masked_index", as_index=False)
 
-    collect_results = {}
+    collect_results = OrderedDict()
     original_words = [group_by_perturbed_word.iloc[0]['original_word']
                       for _, group_by_perturbed_word in groups_by_perturbed_word]
+    original_words_idx = [group_by_perturbed_word.iloc[0]['original_word_idx']
+                          for _, group_by_perturbed_word in groups_by_perturbed_word]
     groups_by_perturbed_word = [group_by_perturbed_word for _, group_by_perturbed_word in groups_by_perturbed_word]
     original_words = list(uniquify(original_words))
     if alignment_tool == "Tercom" and align_type == "trans-only" and 'trans-only-alignment' not in sentence_df.columns:
@@ -485,16 +488,24 @@ def analyse_single_sentence(sentence_df,
     for word in words:
         no_effect_words = []
         effect_words = []
+        no_effect_words_idx = []
+        effect_words_idx = []
 
-        for original_word, collected_result in collect_results.items():
+        for original_word_idx, (original_word, collected_result) in zip(original_words_idx, collect_results.items()):
             if word in collected_result['words_with_unstable_trans']:
                 effect_words.append(original_word)
+                effect_words_idx.append(original_word_idx)
             elif word in collected_result['perturbed_or_noise_words'] and include_direct_influence:
                 effect_words.append(original_word)
+                effect_words_idx.append(original_word_idx)
             elif word in collected_result['words_with_consistent_trans']:
                 no_effect_words.append(original_word)
+                no_effect_words_idx.append(original_word_idx)
 
         result[word] = {'no_effecting_words': no_effect_words,
-                        'effecting_words': effect_words}
+                        'effecting_words': effect_words,
+                        'no_effecting_words_idx': no_effect_words_idx,
+                        'effecting_words_idx': effect_words_idx,
+                        }
 
     return result

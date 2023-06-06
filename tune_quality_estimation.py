@@ -189,8 +189,9 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
 
     word_tag = []
     details = []  # the effecting and no-effecting SRC words to every translated words
-    clean_details_cols = ['Sentence_idx', 'Target_word_idx', 'Target_word', 'OK/BAD', 'Effecting_src_words']
-    clean_details = pd.DataFrame(columns=clean_details_cols) # the effecting SRC words to every translated words
+    clean_details_cols = \
+        ['Sentence_idx', 'Target_word_idx', 'Target_word', 'OK/BAD', 'Effecting_src_words', 'Effecting_src_words_idx']
+    clean_details = pd.DataFrame(columns=clean_details_cols)  # the effecting SRC words to every translated words
     perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
 
     # Perform alignment here at once for efficiency
@@ -234,14 +235,17 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
                     lambda x: sentence_df['tokenized_SRC-Trans'].values[0][x]
                 )
                 tmp_clean_details['Effecting_src_words'] = tgt_src_effects.values()
-                tmp_clean_details['OK/BAD'] = sentence_word_tags
-                tmp_clean_details['Sentence_idx'] = SRC_original_idx
-
+                tmp_clean_details['Effecting_src_words_idx'] = \
+                    tmp_clean_details['Effecting_src_words'].apply(
+                        lambda x: x['effecting_words_idx']
+                    )
                 # Remove the uniquify tags from src_words
                 tmp_clean_details['Effecting_src_words'] = \
                     tmp_clean_details['Effecting_src_words'].apply(
                         lambda x: [re.sub(r"_\d+$", "", i) for i in x['effecting_words']]
                     )
+                tmp_clean_details['OK/BAD'] = sentence_word_tags
+                tmp_clean_details['Sentence_idx'] = SRC_original_idx
 
                 # Append to the final dataframe
                 clean_details = pd.concat([clean_details, tmp_clean_details], ignore_index=True)
