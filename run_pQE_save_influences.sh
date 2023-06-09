@@ -56,7 +56,13 @@ elif [[ (${lang_pair} == "en2zh") || (${lang_pair} == "en2ja") ]]; then
   nmt_log_prob_threshold=0.6
 fi
 bash run_perturbation_and_translation.sh ${dataname} ${SRC_LANG} ${TGT_LANG} ${mask_type} ${unmasking_model} ${MTmodel}
-OUTPUT_dir=output/${dataname}_${lang_pair}_${MTmodel}
+
+if [[ ${dataname} == "WMT21_DA"* ]]; then
+  # Always uses qe_wmt21 MT models for consistent with gold label, so no need to specify
+  OUTPUT_dir=output/${dataname}_${lang_pair}
+else
+  OUTPUT_dir=output/${dataname}_${lang_pair}_${MTmodel}
+fi
 output_dir_original_SRC=${OUTPUT_dir}/original
 
 

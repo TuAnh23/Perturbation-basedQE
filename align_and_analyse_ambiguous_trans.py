@@ -490,14 +490,19 @@ def analyse_single_sentence(sentence_df,
         effect_words = []
         no_effect_words_idx = []
         effect_words_idx = []
+        direct_perturbation_words = []
+        direct_perturbation_words_idx = []
 
         for original_word_idx, (original_word, collected_result) in zip(original_words_idx, collect_results.items()):
             if word in collected_result['words_with_unstable_trans']:
                 effect_words.append(original_word)
                 effect_words_idx.append(original_word_idx)
-            elif word in collected_result['perturbed_or_noise_words'] and include_direct_influence:
-                effect_words.append(original_word)
-                effect_words_idx.append(original_word_idx)
+            elif word in collected_result['perturbed_or_noise_words']:
+                if include_direct_influence:
+                    effect_words.append(original_word)
+                    effect_words_idx.append(original_word_idx)
+                direct_perturbation_words.append(original_word)
+                direct_perturbation_words_idx.append(original_word_idx)
             elif word in collected_result['words_with_consistent_trans']:
                 no_effect_words.append(original_word)
                 no_effect_words_idx.append(original_word_idx)
@@ -506,6 +511,8 @@ def analyse_single_sentence(sentence_df,
                         'effecting_words': effect_words,
                         'no_effecting_words_idx': no_effect_words_idx,
                         'effecting_words_idx': effect_words_idx,
+                        'direct_perturbation_words': direct_perturbation_words,
+                        'direct_perturbation_words_idx': direct_perturbation_words_idx
                         }
 
     return result
