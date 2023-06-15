@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=5
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 export HF_HOME=/project/OML/tdinh/.cache/huggingface
@@ -187,7 +187,8 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
       # Post-process
 #      sed -r 's/(@@ )| (@@ ?$)//g' < ${output_dir}/mt.out | sacremoses -l $TGT_LANG detokenize > $OUTPUT
       sed -r 's/(@@ )| (@@ ?$)//g' < ${output_dir}/mt.out | perl ../mosesdecoder/scripts/tokenizer/detokenizer.perl -l $TGT_LANG > $OUTPUT
-    elif [[ ($SRC_LANG == "en" && $TGT_LANG == "ja") || ($SRC_LANG == "en" && $TGT_LANG == "cs") ]]; then
+#    elif [[ ($SRC_LANG == "en" && $TGT_LANG == "ja") || ($SRC_LANG == "en" && $TGT_LANG == "cs") ]]; then
+    else
       model_path=models/mbart50.ft.1n
       data_root=${TMP}
       raw_folder=raw
@@ -198,6 +199,8 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
         TGT_LANG_formatted="ja_XX"
       elif [ "$TGT_LANG" = "cs" ]; then
         TGT_LANG_formatted="cs_CZ"
+      elif [ "$TGT_LANG" = "vi" ]; then
+        TGT_LANG_formatted="vi_VN"
       fi
 
       mkdir ${data_root}/${raw_folder}

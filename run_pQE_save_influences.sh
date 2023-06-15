@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=5
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 export HF_HOME=/project/OML/tdinh/.cache/huggingface
@@ -26,8 +26,11 @@ else
   dataname=$2
 fi
 
-#declare -a lang_pairs=("en2de" "ro2en" "et2en" "en2zh" )
-lang_pair="en2de"
+if [ -z "$3" ]; then
+  lang_pair="en2de"
+else
+  lang_pair=$3
+fi
 
 SRC_LANG=${lang_pair:0:2}
 TGT_LANG=${lang_pair:3:2}
@@ -38,7 +41,7 @@ mkdir -p ${analyse_output_path}
 
 
 # Get the translations (original and perturbed)
-if [[ (${lang_pair} == "en2de") || (${lang_pair} == "en2cs") ]]; then
+if [[ (${lang_pair} == "en2de") || (${lang_pair} == "en2cs") || (${lang_pair} == "en2vi") ]]; then
   effecting_words_threshold=2
   consistence_trans_portion_threshold=0.95
   uniques_portion_for_noiseORperturbed_threshold=0.9
