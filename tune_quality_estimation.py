@@ -55,7 +55,7 @@ def load_gold_labels(dataset, data_root_path, src_lang, tgt_lang, task):
                 header=None, sep='\t', quoting=3
             )
             return gold_labels.groupby(3)[6].apply(list).tolist()
-    if dataset == 'WMT21_DA_dev':
+    elif dataset == 'WMT21_DA_dev':
         if task == 'sentence_level_eval_da':
             gold_labels_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/direct-assessments/{src_lang}-{tgt_lang}-dev/dev.{src_lang}{tgt_lang}.df.short.tsv"
             return pd.read_csv(gold_labels_path, sep='\t')['z_mean'].to_list()
@@ -86,6 +86,20 @@ def load_gold_labels(dataset, data_root_path, src_lang, tgt_lang, task):
             mqm_scores = f.readlines()
             mqm_scores = [float(mqm_score.replace('\n', '')) for mqm_score in mqm_scores]
         return mqm_scores
+    elif dataset == "WMT20_HJQE_test":
+        if task == 'trans_word_level_eval':
+            gold_labels_path = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.tags"
+        elif task == 'src_word_level_eval':
+            gold_labels_path = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.source_tags"
+        else:
+            raise RuntimeError(f"task {task} not available for dataset {dataset}")
+
+        gold_labels = load_text_file(gold_labels_path)
+        gold_labels = [x.split() for x in gold_labels]
+        gold_labels = [line[1:-1] for line in gold_labels]  # Remove the begin and end tag
+        gold_labels = [line[::2] for line in gold_labels]  # Remove the gap tags
+
+        return gold_labels
 
 
 def flatten_list(list_of_lists):
@@ -292,6 +306,11 @@ def get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang, original
             tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
     elif dataset == 'WMT21_DA_dev':
         tokenized_path = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/{src_lang}-{tgt_lang}-dev/dev.mt"
+        with open(tokenized_path, 'r') as f:
+            tokenized_translations = f.readlines()
+            tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
+    elif dataset == 'WMT20_HJQE_test':
+        tokenized_path = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.mt"
         with open(tokenized_path, 'r') as f:
             tokenized_translations = f.readlines()
             tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]

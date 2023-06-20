@@ -102,8 +102,7 @@ def main():
 
     elif args.dataname == "covost2_all":
         assert args.src_lang == 'en'
-        # Collect the SRC sentences from all pairs except the pairs that we are trying to translate
-        # Just in cased the model is trained on that data
+        # Collect the SRC sentences from the test split of all pairs
         src_df = pd.DataFrame(columns=['SRC'])
         data_dir = f"{args.data_root_dir}/covost2/EN-translations"
 
@@ -118,7 +117,9 @@ def main():
                     tar.close()
 
                 tmp_df = pd.DataFrame()
-                tmp_df['SRC'] = pd.read_csv(os.path.join(data_dir, unzipped_file_name), sep='\t')['translation']
+                original_df = pd.read_csv(os.path.join(data_dir, unzipped_file_name), sep='\t')
+                original_df = original_df[original_df['split'] == 'test']
+                tmp_df['SRC'] = original_df['translation']
 
                 src_df = pd.concat([src_df, tmp_df], axis=0, ignore_index=True)
 
@@ -155,6 +156,22 @@ def main():
             en_sentences = [line.rstrip() for line in en_sentences]
 
         with open(f"{args.data_root_dir}/wmt-qe-2021-data/{args.src_lang}-{args.tgt_lang}-dev/post-editing/{args.src_lang}-{args.tgt_lang}-dev/dev.src") as f:
+            en_sentences_tok = f.readlines()
+            en_sentences_tok = [line.rstrip() for line in en_sentences_tok]
+
+        src_df = pd.DataFrame(data={'SRC': en_sentences, 'tokenized_SRC': en_sentences_tok})
+
+    elif args.dataname.startswith('WMT20_HJQE_test'):
+        # Original WMT20 data from https://github.com/facebookresearch/mlqe/tree/main/data
+        # HJQE labels from https://github.com/ZhenYangIACAS/HJQE
+
+        assert args.src_lang == 'en'
+        en_sentences = pd.read_csv(
+            f"{args.data_root_dir}/wmt-qe-2020-data/{args.src_lang}-{args.tgt_lang}-test20/test20.{args.src_lang}{args.tgt_lang}.df.short.tsv",
+            sep='\t'
+        )['original'].tolist()
+
+        with open(f"{args.data_root_dir}/HJQE/{args.src_lang}-{args.tgt_lang}/test/test.src") as f:
             en_sentences_tok = f.readlines()
             en_sentences_tok = [line.rstrip() for line in en_sentences_tok]
 

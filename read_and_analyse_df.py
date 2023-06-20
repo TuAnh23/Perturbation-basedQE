@@ -333,7 +333,7 @@ def tokenization_per_dataset(dataset, data_root_path, src_lang, tgt_lang, src_li
     # Tokenizing the original src-trans
     # For WMT21 QE data, use the provided tokens from the data for original SRC and trans
     # and perform tokenization ourselves for the perturbed SRC and trans
-    if dataset.startswith("WMT21_DA"):
+    if dataset.startswith("WMT"):
         # Load the tokens from data
         if dataset.startswith("WMT21_DA_test"):
             tokenized_src_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-test21/test21.tok.src"
@@ -342,6 +342,9 @@ def tokenization_per_dataset(dataset, data_root_path, src_lang, tgt_lang, src_li
             tokenized_src_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/" \
                                  f"{src_lang}-{tgt_lang}-dev/dev.src"
             tokenized_trans_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/{src_lang}-{tgt_lang}-dev/dev.mt"
+        elif dataset.startswith("WMT20_HJQE_test"):
+            tokenized_src_file = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.src"
+            tokenized_trans_file = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.mt"
         else:
             raise RuntimeError
         with open(tokenized_src_file, 'r') as f:
