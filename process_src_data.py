@@ -171,7 +171,7 @@ def main():
             sep='\t'
         )['original'].tolist()
 
-        with open(f"{args.data_root_dir}/HJQE/{args.src_lang}-{args.tgt_lang}/test/test.src") as f:
+        with open(f"{args.data_root_dir}/HJQE/{args.src_lang}-{args.tgt_lang}/test/test.tok.src") as f:
             en_sentences_tok = f.readlines()
             en_sentences_tok = [line.rstrip() for line in en_sentences_tok]
 

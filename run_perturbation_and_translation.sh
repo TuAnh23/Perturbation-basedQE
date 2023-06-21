@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=5
+export CUDA_VISIBLE_DEVICES=3
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 export HF_HOME=/project/OML/tdinh/.cache/huggingface
@@ -96,6 +96,16 @@ mkdir -p ${TMP_dir_perturbed_SRC}
 
 # Process the data
 if [ ! -f "${output_dir_original_SRC}/src_df.csv" ]; then
+  if [[ ( ${dataname} == "WMT20_HJQE"* ) ]]; then
+    # Have to de-truecase to get the correct tokenized src and hyp files
+    split="${dataname##*_}"
+    if [[ ( ! -f "${data_root_dir}/HJQE/${SRC_LANG}-${TGT_LANG}/${split}/${split}.tok.mt" ) ]]; then
+       perl ../mosesdecoder/scripts/recaser/detruecase.perl < "${data_root_dir}/HJQE/${SRC_LANG}-${TGT_LANG}/${split}/${split}.mt" > "${data_root_dir}/HJQE/${SRC_LANG}-${TGT_LANG}/${split}/${split}.tok.mt"
+    fi
+    if [[ ( ! -f "${data_root_dir}/HJQE/${SRC_LANG}-${TGT_LANG}/${split}/${split}.tok.src" ) ]]; then
+       perl ../mosesdecoder/scripts/recaser/detruecase.perl < "${data_root_dir}/HJQE/${SRC_LANG}-${TGT_LANG}/${split}/${split}.src" > "${data_root_dir}/HJQE/${SRC_LANG}-${TGT_LANG}/${split}/${split}.tok.src"
+    fi
+  fi
   python -u process_src_data.py \
     --data_root_dir ${data_root_dir} \
     --src_lang ${SRC_LANG} \

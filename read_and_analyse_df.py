@@ -343,8 +343,8 @@ def tokenization_per_dataset(dataset, data_root_path, src_lang, tgt_lang, src_li
                                  f"{src_lang}-{tgt_lang}-dev/dev.src"
             tokenized_trans_file = f"{data_root_path}/wmt-qe-2021-data/{src_lang}-{tgt_lang}-dev/post-editing/{src_lang}-{tgt_lang}-dev/dev.mt"
         elif dataset.startswith("WMT20_HJQE_test"):
-            tokenized_src_file = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.src"
-            tokenized_trans_file = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.mt"
+            tokenized_src_file = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.tok.src"
+            tokenized_trans_file = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.tok.mt"
         else:
             raise RuntimeError
         with open(tokenized_src_file, 'r') as f:
