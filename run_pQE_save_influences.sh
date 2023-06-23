@@ -73,9 +73,9 @@ output_dir_original_SRC=${OUTPUT_dir}/original
 if [[ ! -f ${analyse_output_path}/tok_src.${SRC_LANG} ]]; then
   cp ${output_dir_original_SRC}/input.${SRC_LANG} ${analyse_output_path}/src.${SRC_LANG}
   if [[ ${dataname} == "WMT21_DA_test" ]]; then
-    cp "data/wmt-qe-2021-data/${SRC_LANG}-${TGT_LANG}-test21/test21.tok.src" tok_src.${SRC_LANG}
+    cp "data/wmt-qe-2021-data/${SRC_LANG}-${TGT_LANG}-test21/test21.tok.src" ${analyse_output_path}/tok_src.${SRC_LANG}
   elif [[ ${dataname} == "WMT20_HJQE_test" ]]; then
-    cp "data/HJQE/${SRC_LANG}-${TGT_LANG}/test/test.tok.src" tok_src.${SRC_LANG}
+    cp "data/HJQE/${SRC_LANG}-${TGT_LANG}/test/test.tok.src" ${analyse_output_path}/tok_src.${SRC_LANG}
   else
     python -u tokenization.py \
       --text_file_path ${output_dir_original_SRC}/input.${SRC_LANG} \
@@ -87,9 +87,9 @@ fi
 if [[ ! -f ${analyse_output_path}/tok_trans.${TGT_LANG} ]]; then
   cp ${output_dir_original_SRC}/trans_sentences.txt ${analyse_output_path}/trans.${TGT_LANG}
   if [[ ${dataname} == "WMT21_DA_test" ]]; then
-    cp "data/wmt-qe-2021-data/${SRC_LANG}-${TGT_LANG}-test21/test21.tok.mt" tok_trans.${TGT_LANG}
+    cp "data/wmt-qe-2021-data/${SRC_LANG}-${TGT_LANG}-test21/test21.tok.mt" ${analyse_output_path}/tok_trans.${TGT_LANG}
   elif [[ ${dataname} == "WMT20_HJQE_test" ]]; then
-    cp "data/HJQE/${SRC_LANG}-${TGT_LANG}/test/test.tok.mt" tok_trans.${TGT_LANG}
+    cp "data/HJQE/${SRC_LANG}-${TGT_LANG}/test/test.tok.mt" ${analyse_output_path}/tok_trans.${TGT_LANG}
   else
     python -u tokenization.py \
       --text_file_path ${output_dir_original_SRC}/trans_sentences.txt \
