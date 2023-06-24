@@ -3,7 +3,8 @@ import torch
 import pandas as pd
 import gensim.downloader as api
 import logging
-from transformers import pipeline
+from transformers import RobertaTokenizer, RobertaForMaskedLM, BertTokenizer, BertForMaskedLM, DistilBertTokenizer, \
+    DistilBertForMaskedLM
 from nltk.stem.snowball import SnowballStemmer
 from torch.utils.data import Dataset, DataLoader
 from utils import str_to_bool, set_seed
@@ -33,6 +34,69 @@ class MaskedSentencesDataset(Dataset):
         return len(self.samples)
 
 
+def load_unmasker(pretrained_model_name, device):
+    if pretrained_model_name.startswith("roberta"):
+        model = RobertaForMaskedLM.from_pretrained(pretrained_model_name)
+        tokenizer = RobertaTokenizer.from_pretrained(pretrained_model_name)
+    elif pretrained_model_name.startswith("bert"):
+        model = BertForMaskedLM.from_pretrained(pretrained_model_name)
+        tokenizer = BertTokenizer.from_pretrained(pretrained_model_name)
+    elif pretrained_model_name.startswith("distilbert"):
+        model = BertForMaskedLM.from_pretrained(pretrained_model_name)
+        tokenizer = BertTokenizer.from_pretrained(pretrained_model_name)
+    else:
+        raise RuntimeError(f"Unknown model {pretrained_model_name}")
+    model = model.to(device)
+    return tokenizer, model
+
+
+def run_unmasker(unmasker_model, unmasker_tokenizer, device, top_k, sentence_list, batch_size=300):
+    ret = []
+
+    masked_dataset = MaskedSentencesDataset(sentence_list)
+    dataloader = DataLoader(
+        masked_dataset,
+        batch_size=batch_size,
+        shuffle=False
+    )
+
+    for batch in dataloader:
+        inputs = unmasker_tokenizer.batch_encode_plus(
+            batch,
+            padding=True,
+            truncation=True,
+            return_tensors="pt"
+        )
+        inputs = inputs.to(device)
+
+        with torch.no_grad():
+            outputs = unmasker_model(**inputs)
+
+        logits = outputs.logits
+        mask_token_indices = (inputs.input_ids == unmasker_tokenizer.mask_token_id).nonzero(as_tuple=True)[1]
+        probs = logits.gather(
+            dim=1, index=mask_token_indices.unsqueeze(1).unsqueeze(2).expand(logits.shape[0], 1, logits.shape[2])
+            # Select the logits of the masked word only
+        ).softmax(dim=-1)
+        values, predictions = probs.topk(top_k, dim=-1)
+
+        decoded_strs = [unmasker_tokenizer.decode(prediction.flatten()).split() for prediction in predictions]
+
+        for sent, v_per_sent, p_per_sent, d_per_sent in zip(batch, values, predictions, decoded_strs):
+            ret_per_sent = []
+            v_per_sent = v_per_sent.flatten()
+            p_per_sent = p_per_sent.flatten()
+            for v, p, d in zip(v_per_sent, p_per_sent, d_per_sent):
+                result = {}
+                result["score"] = float(v)
+                result["token"] = int(p)
+                result["token_str"] = d
+                result["sequence"] = sent.replace("<mask>", d)
+                ret_per_sent.append(result)
+            ret.append(ret_per_sent)
+    return ret
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--masked_src_path', type=str)
@@ -47,6 +111,7 @@ def main():
                         help='Whether the data is masked in the groupped setting, i.e., single word over multiple '
                              'sentences, and the replacement rank in across sentences')
     parser.add_argument('--unmasking_model', type=str, default='bert-base-cased')
+    parser.add_argument('--batch_size', type=int, default=300)
     args = parser.parse_args()
     print(args)
 
@@ -55,16 +120,19 @@ def main():
     masked_src_df = pd.read_csv(args.masked_src_path, index_col=0)
 
     LOGGER.debug("Loading word embedding / language masking model")
+    unmasker_tokenizer = None
+    device = None
     if args.replacement_strategy == 'word2vec_similarity':
         word_replacement_model = api.load('glove-wiki-gigaword-100')
     elif args.replacement_strategy.startswith('masking_language_model'):
         if torch.cuda.is_available():
-            gpu = 0
+            device = torch.device("cuda")
+            print('There are %d GPU(s) available.' % torch.cuda.device_count())
+            print('We will use the GPU:', torch.cuda.get_device_name(0))
         else:
-            print('No GPU available, using CPU instead.')
-            gpu = -1
-
-        word_replacement_model = pipeline('fill-mask', model=args.unmasking_model, device=gpu)
+            print('No GPU available, using the CPU instead.')
+            device = torch.device("cpu")
+        unmasker_tokenizer, word_replacement_model = load_unmasker(args.unmasking_model, device)
 
     else:
         raise RuntimeError(f"Replacement strategy {args.replacement_strategy} not available.")
@@ -78,7 +146,10 @@ def main():
         unmasked_df = replace_mask(masked_src_df,
                                    args.replacement_strategy,
                                    args.number_of_replacement,
-                                   word_replacement_model)
+                                   word_replacement_model,
+                                   unmasker_tokenizer,
+                                   device,
+                                   args.batch_size)
 
     unmasked_df.to_csv(f"{args.output_dir}/unmasked_df.csv")
 
@@ -203,7 +274,8 @@ def replace_grouped_mask(masked_src_df, replacement_strategy, number_of_replacem
     return output_df
 
 
-def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, replacement_model):
+def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, unmasker_model, unmasker_tokenizer=None,
+                 device=None, batch_size=300):
     """
         Perturb sentences (put in a dataframe) by replacing a word. Here the provided sentences are already masked,
         we only need to provide the replacement
@@ -213,30 +285,29 @@ def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, rep
         :param replacement_strategy: 'masking_language_model' ('word2vec_similarity' can be used in theory but not yet
         implemented)
         :param number_of_replacement: number of words to replace the 1 SRC word
-        :param replacement_model: word2vec model if replacement_strategy=='word2vec_similarity', a language model if
+        :param unmasker_model: word2vec model if replacement_strategy=='word2vec_similarity', a language model if
         replacement_strategy=='masking_language_model'
+        :param unmasker_tokenizer: only required if replacement_model is a language model such as BERT
+        :param device: device to perform unmasking. Only relevant if replacement_model is a language model such as BERT
+        :param batch_size: Only relevant if replacement_model is a language model such as BERT
         :return: (an) unmasked sentence(s)
     """
     MASK_TOKEN = '[MASK]'
     if replacement_strategy.startswith('masking_language_model'):
+        assert unmasker_tokenizer is not None
         # Different unmasking model could have different mask token ('[MASK]' or '<mask>')
         # Have to adapt the data
-        MASK_TOKEN = replacement_model.tokenizer.mask_token
+        MASK_TOKEN = unmasker_tokenizer.mask_token
         masked_src_df['SRC_masked'] = masked_src_df['SRC_masked'].apply(lambda x: x.replace('[MASK]', MASK_TOKEN))
+    else:
+        raise RuntimeError(f"Replacement strategy {replacement_strategy} not available")
 
     # Unmask all sentences, save raw unmasking value from the bert model
-    # Do not do it within the loop for better GPU efficiency
-    masked_dataset = MaskedSentencesDataset(masked_src_df['SRC_masked'].values)
-    masked_src_df['raw_unmasks_bert'] = replacement_model(masked_dataset, top_k=40)
-
-    # dataloader = DataLoader(masked_dataset, batch_size=500)
-    #
-    # all_outputs = []
-    # for batch in dataloader:
-    #     results = replacement_model(batch, top_k=40, batch_size=500)
-    #     for result in results:
-    #         all_outputs.append(result)
-    # masked_src_df['raw_unmasks_bert'] = all_outputs
+    masked_src_df['raw_unmasks_bert'] = run_unmasker(unmasker_model, unmasker_tokenizer, device,
+                                                     top_k=number_of_replacement + 10,
+                                                     sentence_list=masked_src_df['SRC_masked'].tolist(),
+                                                     batch_size=batch_size
+                                                     )
 
     output_df = pd.DataFrame(
         columns=list(masked_src_df.columns) + ['Replacement rank', f"perturbed_word", f"SRC_perturbed"]
