@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=5
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 export HF_HOME=/project/OML/tdinh/.cache/huggingface
@@ -51,7 +51,7 @@ dev=False
 grouped_mask=False
 trans_direction="${SRC_LANG}2${TGT_LANG}"
 data_root_dir="data"
-batch_size=200
+batch_size=1200
 seed=0
 replacement_strategy="masking_language_model_${unmasking_model}"
 number_of_replacement=30
@@ -138,7 +138,7 @@ if [ ! -f "${output_dir_perturbed_SRC}/unmasked_df.csv" ]; then
     --number_of_replacement ${number_of_replacement} \
     --grouped_mask ${grouped_mask} \
     --unmasking_model ${unmasking_model} \
-    --batch_size 300
+    --batch_size ${batch_size}
 fi
 
 # Translate original and perturbed sentences
@@ -234,7 +234,7 @@ for input_SRC_column in ${input_SRC_columns[@]}; do
         --source-lang ${SRC_LANG_formatted} \
         --target-lang ${TGT_LANG_formatted} \
         --sacrebleu \
-        --batch-size 32 \
+        --batch-size ${batch_size} \
         --encoder-langtok "src" \
         --decoder-langtok \
         --lang-dict "$lang_list" \
