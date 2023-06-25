@@ -138,7 +138,7 @@ if [ ! -f "${output_dir_perturbed_SRC}/unmasked_df.csv" ]; then
     --number_of_replacement ${number_of_replacement} \
     --grouped_mask ${grouped_mask} \
     --unmasking_model ${unmasking_model} \
-    --batch_size 200
+    --batch_size 300
 fi
 
 # Translate original and perturbed sentences

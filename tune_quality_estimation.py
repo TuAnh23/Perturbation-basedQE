@@ -18,6 +18,7 @@ from multiprocessing import Pool, cpu_count
 from itertools import repeat
 from utils import load_text_file
 import re
+from tqdm import tqdm
 
 
 def load_gold_labels(dataset, data_root_path, src_lang, tgt_lang, task):
@@ -224,6 +225,8 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
     perturbed_trans_df['trans-only-alignment'] = aligments
 
     SRC_original_indices = perturbed_trans_df['SRC_original_idx'].unique()
+
+    progress_bar = tqdm(total=len(SRC_original_indices))
     for SRC_original_idx in SRC_original_indices:
         sentence_df = perturbed_trans_df[perturbed_trans_df['SRC_original_idx'] == SRC_original_idx]
         original_trans_length = len(sentence_df['tokenized_SRC-Trans'].values[0])
@@ -282,6 +285,11 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
                 clean_details = pd.concat([clean_details, tmp_clean_details], ignore_index=True)
             else:
                 details.append(tgt_src_effects)
+
+        # Update the progress bar
+        progress_bar.update(1)
+
+    progress_bar.close()
 
     if not keep_unknown:
         word_tag = replace_unknown(word_tag)

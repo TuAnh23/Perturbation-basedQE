@@ -1,4 +1,7 @@
 import argparse
+import pickle
+
+import spacy
 import torch
 import pandas as pd
 import gensim.downloader as api
@@ -8,6 +11,7 @@ from transformers import RobertaTokenizer, RobertaForMaskedLM, BertTokenizer, Be
 from nltk.stem.snowball import SnowballStemmer
 from torch.utils.data import Dataset, DataLoader
 from utils import str_to_bool, set_seed
+from tqdm import tqdm
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -50,7 +54,7 @@ def load_unmasker(pretrained_model_name, device):
     return tokenizer, model
 
 
-def run_unmasker(unmasker_model, unmasker_tokenizer, device, top_k, sentence_list, batch_size=300):
+def run_unmasker(unmasker_model, unmasker_tokenizer, device, top_k, sentence_list, batch_size):
     ret = []
 
     masked_dataset = MaskedSentencesDataset(sentence_list)
@@ -60,6 +64,7 @@ def run_unmasker(unmasker_model, unmasker_tokenizer, device, top_k, sentence_lis
         shuffle=False
     )
 
+    progress_bar = tqdm(total=len(dataloader))
     for batch in dataloader:
         inputs = unmasker_tokenizer.batch_encode_plus(
             batch,
@@ -72,20 +77,21 @@ def run_unmasker(unmasker_model, unmasker_tokenizer, device, top_k, sentence_lis
         with torch.no_grad():
             outputs = unmasker_model(**inputs)
 
-        logits = outputs.logits
-        mask_token_indices = (inputs.input_ids == unmasker_tokenizer.mask_token_id).nonzero(as_tuple=True)[1]
+        logits = outputs.logits  # nr_sentences_per_batch x nr_words_longest_sent x vocab_size
+        mask_token_indices = (inputs.input_ids == unmasker_tokenizer.mask_token_id).nonzero(as_tuple=True)[1]  # 1 x nr_sentences_per_batch
         probs = logits.gather(
-            dim=1, index=mask_token_indices.unsqueeze(1).unsqueeze(2).expand(logits.shape[0], 1, logits.shape[2])
-            # Select the logits of the masked word only
-        ).softmax(dim=-1)
-        values, predictions = probs.topk(top_k, dim=-1)
+            dim=1, index=mask_token_indices.unsqueeze(1).unsqueeze(2).expand(logits.shape[0], 1, logits.shape[2])  # Select the logits of the masked word only
+        ).softmax(dim=-1)  # nr_sentences_per_batch x 1 x vocab_size
+        probs = probs.squeeze(dim=1)  # nr_sentences_per_batch x vocab_size
+        values, predictions = probs.topk(top_k, dim=-1)  # nr_sentences_per_batch x top_k
 
-        decoded_strs = [unmasker_tokenizer.decode(prediction.flatten()).split() for prediction in predictions]
+        # decoded_strs = [unmasker_tokenizer.convert_ids_to_tokens(prediction) for prediction in predictions]
+        decoded_strs = unmasker_tokenizer.convert_ids_to_tokens(predictions.flatten())
+        decoded_strs = [token.replace("Ġ", "") for token in decoded_strs]
+        decoded_strs = [decoded_strs[i:i + top_k] for i in range(0, len(decoded_strs), top_k)]
 
         for sent, v_per_sent, p_per_sent, d_per_sent in zip(batch, values, predictions, decoded_strs):
             ret_per_sent = []
-            v_per_sent = v_per_sent.flatten()
-            p_per_sent = p_per_sent.flatten()
             for v, p, d in zip(v_per_sent, p_per_sent, d_per_sent):
                 result = {}
                 result["score"] = float(v)
@@ -94,6 +100,9 @@ def run_unmasker(unmasker_model, unmasker_tokenizer, device, top_k, sentence_lis
                 result["sequence"] = sent.replace("<mask>", d)
                 ret_per_sent.append(result)
             ret.append(ret_per_sent)
+        # Update the progress bar
+        progress_bar.update(1)
+    progress_bar.close()
     return ret
 
 
@@ -274,6 +283,11 @@ def replace_grouped_mask(masked_src_df, replacement_strategy, number_of_replacem
     return output_df
 
 
+def lemmatize(spacy_model, token):
+    doc = spacy_model(token)
+    return [token.lemma_ for token in doc][0]
+
+
 def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, unmasker_model, unmasker_tokenizer=None,
                  device=None, batch_size=300):
     """
@@ -293,6 +307,9 @@ def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, unm
         :return: (an) unmasked sentence(s)
     """
     MASK_TOKEN = '[MASK]'
+    stemmer = SnowballStemmer("english")
+    # spacy_model = spacy.load("en_core_web_sm")
+
     if replacement_strategy.startswith('masking_language_model'):
         assert unmasker_tokenizer is not None
         # Different unmasking model could have different mask token ('[MASK]' or '<mask>')
@@ -303,16 +320,20 @@ def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, unm
         raise RuntimeError(f"Replacement strategy {replacement_strategy} not available")
 
     # Unmask all sentences, save raw unmasking value from the bert model
+    print("Run LM unmasking")
     masked_src_df['raw_unmasks_bert'] = run_unmasker(unmasker_model, unmasker_tokenizer, device,
                                                      top_k=number_of_replacement + 10,
                                                      sentence_list=masked_src_df['SRC_masked'].tolist(),
                                                      batch_size=batch_size
                                                      )
 
-    output_df = pd.DataFrame(
-        columns=list(masked_src_df.columns) + ['Replacement rank', f"perturbed_word", f"SRC_perturbed"]
-    )
+    # Store values for new columns in the unmasking df
+    replacement_ranks = []
+    perturbed_words = []
+    SRC_perturbeds = []
 
+    print("Selecting the replacements")
+    progress_bar = tqdm(total=masked_src_df.shape[0])
     for index, row in masked_src_df.iterrows():
         unmasked_row = row.copy()
         masked_word = unmasked_row['original_word']
@@ -320,28 +341,37 @@ def replace_mask(masked_src_df, replacement_strategy, number_of_replacement, unm
         if replacement_strategy.startswith('masking_language_model'):
             pred = row['raw_unmasks_bert']
 
-            # Choose the most probable word, if it is not the same as the original word (ignoring case and word form)
-            stemmer = SnowballStemmer("english")
+            # Select the replacements that is not the same as the original word
+            # (ignoring case and word form)
+            replacements_indices = [
+                i for i in range(len(pred))
+                if stemmer.stem(str(pred[i]['token_str']).lower()) != stemmer.stem(str(masked_word).lower())
+            ][:number_of_replacement]
 
-            count_replacement = 0
-            replacement_i = 0
+            if len(replacements_indices) < number_of_replacement:
+                # If not enough distinct replacements, just choose the top replacements
+                replacements_indices = list(range(number_of_replacement))
 
-            while count_replacement < number_of_replacement:
-                candidate_replacement = pred[replacement_i]
-                if stemmer.stem(str(candidate_replacement['token_str']).lower()) != stemmer.stem(
-                        str(masked_word).lower()):
-                    count_replacement = count_replacement + 1
-                    unmasked_row['Replacement rank'] = count_replacement
-                    unmasked_row['perturbed_word'] = candidate_replacement['token_str']
-                    unmasked_row['SRC_perturbed'] = candidate_replacement['sequence'].replace(
-                        '[CLS] ', '').replace(' [SEP]', '')
-                    output_df = pd.concat([output_df, unmasked_row.to_frame().T])
-                replacement_i = replacement_i + 1
+            for i, replacements_index in enumerate(replacements_indices):
+                candidate_replacement = pred[replacements_index]
+                replacement_ranks.append(i)
+                perturbed_words.append(candidate_replacement['token_str'])
+                SRC_perturbeds.append(
+                    candidate_replacement['sequence'].replace('[CLS] ', '').replace(' [SEP]', '')
+                )
 
         else:
             raise RuntimeError(f"Replacement strategy {replacement_strategy} not available.")
 
-    output_df = output_df.drop('raw_unmasks_bert', axis=1)
+        # Update the progress bar
+        progress_bar.update(1)
+    progress_bar.close()
+
+    masked_src_df = masked_src_df.drop('raw_unmasks_bert', axis=1)
+    output_df = masked_src_df.loc[masked_src_df.index.repeat(number_of_replacement)].reset_index(drop=True)
+    output_df['Replacement rank'] = replacement_ranks
+    output_df['perturbed_word'] = perturbed_words
+    output_df['SRC_perturbed'] = SRC_perturbeds
 
     return output_df
 
