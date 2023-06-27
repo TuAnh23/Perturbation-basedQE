@@ -123,10 +123,10 @@ def main():
 
                 src_df = pd.concat([src_df, tmp_df], axis=0, ignore_index=True)
 
-        # Filter out the errornously long sentences
+        # Filter out the errornously long and short sentences
         sentence_lengths = src_df['SRC'].apply(lambda x: len(x))
-        length_stats = sentence_lengths.describe(percentiles=[.25, .5, .75, .99])
-        src_df = src_df[sentence_lengths < length_stats['99%']]
+        length_stats = sentence_lengths.describe(percentiles=[0.05, .95])
+        src_df = src_df[(sentence_lengths < length_stats['95%']) & (sentence_lengths > length_stats['5%'])]
 
         # Remove empty sentences
         src_df = src_df[src_df['SRC'] != ""]
@@ -172,6 +172,22 @@ def main():
         )['original'].tolist()
 
         with open(f"{args.data_root_dir}/HJQE/{args.src_lang}-{args.tgt_lang}/test/test.tok.src") as f:
+            en_sentences_tok = f.readlines()
+            en_sentences_tok = [line.rstrip() for line in en_sentences_tok]
+
+        src_df = pd.DataFrame(data={'SRC': en_sentences, 'tokenized_SRC': en_sentences_tok})
+
+    elif args.dataname.startswith('WMT20_HJQE_dev'):
+        # Original WMT20 data from https://github.com/facebookresearch/mlqe/tree/main/data
+        # HJQE labels from https://github.com/ZhenYangIACAS/HJQE
+
+        assert args.src_lang == 'en'
+        en_sentences = pd.read_csv(
+            f"{args.data_root_dir}/wmt-qe-2020-data/{args.src_lang}-{args.tgt_lang}/dev.{args.src_lang}{args.tgt_lang}.df.short.tsv",
+            sep='\t'
+        )['original'].tolist()
+
+        with open(f"{args.data_root_dir}/HJQE/{args.src_lang}-{args.tgt_lang}/dev/dev.tok.src") as f:
             en_sentences_tok = f.readlines()
             en_sentences_tok = [line.rstrip() for line in en_sentences_tok]
 

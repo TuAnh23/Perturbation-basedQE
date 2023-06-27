@@ -345,6 +345,9 @@ def tokenization_per_dataset(dataset, data_root_path, src_lang, tgt_lang, src_li
         elif dataset.startswith("WMT20_HJQE_test"):
             tokenized_src_file = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.tok.src"
             tokenized_trans_file = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.tok.mt"
+        elif dataset.startswith("WMT20_HJQE_dev"):
+            tokenized_src_file = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/dev/dev.tok.src"
+            tokenized_trans_file = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/dev/dev.tok.mt"
         else:
             raise RuntimeError
         with open(tokenized_src_file, 'r') as f:
@@ -600,7 +603,7 @@ def main():
 
     output = read_output_df(
         df_root_path=args.df_root_path, data_root_path=args.data_root_path,
-        dataset=f"{args.dataname}_{args.src_lang}2{args.tgt_lang}" if "WMT21_DA" in args.dataname
+        dataset=f"{args.dataname}_{args.src_lang}2{args.tgt_lang}" if ("WMT21_DA" in args.dataname or "WMT20_HJQE" in args.dataname)
                 else f"{args.dataname}_{args.src_lang}2{args.tgt_lang}_{args.MTmodel}",
         src_lang=args.src_lang, tgt_lang=args.tgt_lang, mask_type=args.mask_type,
         beam=args.beam, replacement_strategy=args.replacement_strategy, ignore_case=False,

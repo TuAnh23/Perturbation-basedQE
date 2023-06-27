@@ -87,11 +87,12 @@ def load_gold_labels(dataset, data_root_path, src_lang, tgt_lang, task):
             mqm_scores = f.readlines()
             mqm_scores = [float(mqm_score.replace('\n', '')) for mqm_score in mqm_scores]
         return mqm_scores
-    elif dataset == "WMT20_HJQE_test":
+    elif dataset.startswith("WMT20_HJQE"):
+        split = dataset.split('_')[-1]
         if task == 'trans_word_level_eval':
-            gold_labels_path = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.tags"
+            gold_labels_path = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/{split}/{split}.tags"
         elif task == 'src_word_level_eval':
-            gold_labels_path = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.source_tags"
+            gold_labels_path = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/{split}/{split}.source_tags"
         else:
             raise RuntimeError(f"task {task} not available for dataset {dataset}")
 
@@ -211,6 +212,7 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
             'Direct_src_word', 'Direct_src_word_idx'
         ]
     clean_details = pd.DataFrame(columns=clean_details_cols)  # the effecting SRC words to every translated words
+    tmp_clean_details_dfs = [clean_details]
     perturbed_trans_df = pd.read_pickle(perturbed_trans_df_path)
 
     # Perform alignment here at once for efficiency
@@ -282,7 +284,7 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
                 tmp_clean_details['Sentence_idx'] = SRC_original_idx
 
                 # Append to the final dataframe
-                clean_details = pd.concat([clean_details, tmp_clean_details], ignore_index=True)
+                tmp_clean_details_dfs.append(tmp_clean_details)
             else:
                 details.append(tgt_src_effects)
 
@@ -296,6 +298,7 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
 
     if return_details:
         if clean_up_return_details:
+            clean_details = pd.concat(tmp_clean_details_dfs, ignore_index=True)
             return word_tag, clean_details
         else:
             return word_tag, details
@@ -317,8 +320,9 @@ def get_nmt_word_log_probs(dataset, data_root_path, src_lang, tgt_lang, original
         with open(tokenized_path, 'r') as f:
             tokenized_translations = f.readlines()
             tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
-    elif dataset == 'WMT20_HJQE_test':
-        tokenized_path = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/test/test.mt"
+    elif dataset.startswith('WMT20_HJQE'):
+        split = dataset.split('_')
+        tokenized_path = f"{data_root_path}/HJQE/{src_lang}-{tgt_lang}/{split}/{split}.mt"
         with open(tokenized_path, 'r') as f:
             tokenized_translations = f.readlines()
             tokenized_translations = [tokenized_trans.strip().split() for tokenized_trans in tokenized_translations]
@@ -564,7 +568,9 @@ def main():
     parser.add_argument('--perturbed_trans_df_path', type=str, default=None)
     parser.add_argument('--original_translation_output_dir', type=str,
                         help='Folder containing the translation output, including the log probabilities')
-    parser.add_argument('--dataset', type=str, choices=['WMT21_DA_test', 'WMT21_DA_dev'])
+    parser.add_argument('--dataset', type=str,
+                        choices=['WMT21_DA_test', 'WMT21_DA_dev', 'WMT20_HJQE_dev', 'WMT20_HJQE_test']
+    )
     parser.add_argument('--data_root_path', type=str)
     parser.add_argument('--src_lang', type=str)
     parser.add_argument('--tgt_lang', type=str)

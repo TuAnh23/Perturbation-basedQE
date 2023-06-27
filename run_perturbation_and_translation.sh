@@ -51,7 +51,7 @@ dev=False
 grouped_mask=False
 trans_direction="${SRC_LANG}2${TGT_LANG}"
 data_root_dir="data"
-batch_size=1200
+batch_size=600
 seed=0
 replacement_strategy="masking_language_model_${unmasking_model}"
 number_of_replacement=30
@@ -71,7 +71,7 @@ else
   masked_vocab_path="None"
 fi
 
-if [[ ${dataname} == "WMT21_DA"* ]]; then
+if [[ ( ${dataname} == "WMT21_DA"* ) || ( ${dataname} == "WMT20_HJQE"* ) ]]; then
   # Always uses qe_wmt21 MT models for consistent with gold label, so no need to specify
   OUTPUT_dir=output/${dataname}_${trans_direction}
 else

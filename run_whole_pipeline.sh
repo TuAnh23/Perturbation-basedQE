@@ -4,26 +4,32 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=5
+export CUDA_VISIBLE_DEVICES=3
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 export HF_HOME=/project/OML/tdinh/.cache/huggingface
 
 nvidia-smi
 
-declare -a lang_pairs=("en2de" "en2zh" )
+if [ -z "$1" ]; then
+  dataname_prefix="WMT21_DA"  # WMT20_HJQ[E
+else
+  dataname_prefix=$1
+fi
+
+declare -a lang_pairs=( "en2de" "en2zh" )
 
 for lang_pair in ${lang_pairs[@]}; do
   SRC_LANG=${lang_pair:0:2}
   TGT_LANG=${lang_pair:3:2}
 
-  dataname="WMT21_DA_dev"
+  dataname="${dataname_prefix}_dev"
 
-  declare -a unmasking_models=("bert-large-cased-whole-word-masking" "bert-large-cased" "distilbert-base-cased" "roberta-base" "bert-base-cased" )
+  declare -a unmasking_models=( "roberta-base" )  # ( "bert-large-cased-whole-word-masking" "bert-large-cased" "distilbert-base-cased" "roberta-base" "bert-base-cased" )
 
-  declare -a mask_types=("MultiplePerSentence_content" "MultiplePerSentence_allWords" "MultiplePerSentence_allTokens" )
+  declare -a mask_types=( "MultiplePerSentence_content" )  # ( "MultiplePerSentence_content" "MultiplePerSentence_allWords" "MultiplePerSentence_allTokens" )
 
-  declare -a alignment_tools=("Tercom" "Levenshtein" )
+  declare -a alignment_tools=( "Tercom" )  # ( "Tercom" "Levenshtein" )
 
   analyse_output_path="analyse_output/${dataname}_${SRC_LANG}2${TGT_LANG}"
   mkdir -p ${analyse_output_path}
@@ -48,7 +54,7 @@ for lang_pair in ${lang_pairs[@]}; do
         echo "mask_type: ${mask_type}, unmasking_models: ${unmasking_model}, QE_params: ${qe_params}, score: ${score}" | tee -a ${analyse_output_path}/qe_hyperparam_tuning_${alignment_tool}.txt
 
         echo "Eval ${mask_type} ${unmasking_model} also on the test set"
-        testdataname="WMT21_DA_test"
+        testdataname="${dataname_prefix}_test"
         effecting_words_threshold=$(echo "${qe_params}" | awk -F',' '{print $1}')
         consistence_trans_portion_threshold=$(echo "${qe_params}" | awk -F',' '{print $2}')
         uniques_portion_for_noiseORperturbed_threshold=$(echo "${qe_params}" | awk -F',' '{print $3}')
