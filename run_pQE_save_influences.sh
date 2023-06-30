@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=4
+export CUDA_VISIBLE_DEVICES=5
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 export HF_HOME=/project/OML/tdinh/.cache/huggingface
@@ -131,7 +131,7 @@ if [[ ! -f ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${
 fi
 
 # Run quality estimation and save the predicted labels
-declare -a QE_methods=( 'nr_effecting_src_words' 'openkiwi_2.1.0' )
+declare -a QE_methods=( 'nr_effecting_src_words' 'openkiwi_wmt21' )
 for QE_method in ${QE_methods[@]}; do
   echo "-------------------------------------------------"
   if [[ ( ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ) ||

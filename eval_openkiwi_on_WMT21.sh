@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=3
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 export HF_HOME=/project/OML/tdinh/.cache/huggingface
@@ -13,11 +13,11 @@ nvidia-smi
 
 lang_pair="en2de"
 
-dataname="WMT21_DA_test"
+dataname="WMT20_HJQE_test"  # "WMT20_HJQE_test" "WMT21_DA_test"
 SRC_LANG=${lang_pair:0:2}
 TGT_LANG=${lang_pair:3:2}
 
-QE_method="openkiwi_wmt21"  # or "openkiwi_2.1.0"
+QE_method="openkiwi_2.1.0"  # "openkiwi_wmt21", "openkiwi_2.1.0"
 analyse_output_path="analyse_output/${dataname}_${SRC_LANG}2${TGT_LANG}_${QE_method}"
 data_root_dir="data"
 OUTPUT_dir=output/${dataname}_${lang_pair}

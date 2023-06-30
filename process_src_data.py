@@ -100,6 +100,12 @@ def main():
             de_sentences = [line.rstrip() for line in de_sentences]
         src_df = pd.DataFrame(data={'SRC': en_sentences, 'REF': de_sentences})
 
+    elif args.dataname == 'occupations_test':
+        assert args.src_lang == 'en'
+        data_df = pd.read_pickle(f"{args.data_root_dir}/occupations_test.pkl")
+        src_df = pd.DataFrame(data={'SRC': data_df['sentence'].tolist(),
+                                    'tokenized_SRC': data_df['sentence_tok'].tolist()})
+
     elif args.dataname == "covost2_all":
         assert args.src_lang == 'en'
         # Collect the SRC sentences from the test split of all pairs
