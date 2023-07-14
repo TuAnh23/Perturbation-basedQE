@@ -84,6 +84,14 @@ if [[ ! -f ${analyse_output_path}/tok_src.${SRC_LANG} ]]; then
   fi
 fi
 
+# POS tagging on the tokenized original src
+if [[ ! -f ${analyse_output_path}/pos_tok_src.${SRC_LANG} ]]; then
+  python pos_tagging.py \
+    --tok_text_path ${analyse_output_path}/tok_src.${SRC_LANG} \
+    --lang ${SRC_LANG} \
+    --out_path ${analyse_output_path}/pos_tok_src.${SRC_LANG}
+fi
+
 if [[ ! -f ${analyse_output_path}/tok_trans.${TGT_LANG} ]]; then
   cp ${output_dir_original_SRC}/trans_sentences.txt ${analyse_output_path}/trans.${TGT_LANG}
   if [[ ${dataname} == "WMT21_DA_test" ]]; then
@@ -96,6 +104,14 @@ if [[ ! -f ${analyse_output_path}/tok_trans.${TGT_LANG} ]]; then
       --lang ${TGT_LANG} \
       --output_tok_path ${analyse_output_path}/tok_trans.${TGT_LANG}
   fi
+fi
+
+# POS tagging on the tokenized original src
+if [[ ! -f ${analyse_output_path}/pos_tok_trans.${TGT_LANG} ]]; then
+  python pos_tagging.py \
+    --tok_text_path ${analyse_output_path}/tok_trans.${TGT_LANG} \
+    --lang ${TGT_LANG} \
+    --out_path ${analyse_output_path}/pos_tok_trans.${TGT_LANG}
 fi
 
 
