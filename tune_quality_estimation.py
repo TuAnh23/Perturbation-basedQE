@@ -209,6 +209,7 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
         [
             'Sentence_idx', 'Target_word_idx', 'Target_word',
             'OK/BAD', 'Effecting_src_words', 'Effecting_src_words_idx', 'Effecting_src_words_influence',
+            'inconsistent_versions',
             'Direct_src_word', 'Direct_src_word_idx'
         ]
     clean_details = pd.DataFrame(columns=clean_details_cols)  # the effecting SRC words to every translated words
@@ -270,6 +271,11 @@ def nr_effecting_src_words_eval(perturbed_trans_df_path, effecting_words_thresho
                 tmp_clean_details['Direct_src_word_idx'] = \
                     tmp_clean_details['Direct_src_word'].apply(
                         lambda x: x['direct_perturbation_words_idx']
+                    )
+                tmp_clean_details['inconsistent_versions'] = tgt_src_effects.values()
+                tmp_clean_details['inconsistent_versions'] = \
+                    tmp_clean_details['inconsistent_versions'].apply(
+                        lambda x: x['inconsistent_versions']
                     )
                 # Remove the uniquify tags from src_words
                 tmp_clean_details['Effecting_src_words'] = \

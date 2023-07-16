@@ -494,6 +494,7 @@ def analyse_single_sentence(sentence_df,
         direct_perturbation_words = []
         direct_perturbation_words_idx = []
         effect_words_influence = []
+        inconsistent_versions = []
 
         for original_word_idx, (original_word, collected_result) in zip(original_words_idx, collect_results.items()):
             src_word_influence_on_whole_sentence = (len(collected_result['words_with_unstable_trans']) + len(
@@ -504,6 +505,7 @@ def analyse_single_sentence(sentence_df,
                 effect_words_influence.append(
                     src_word_influence_on_whole_sentence
                 )
+                inconsistent_versions.append(collected_result['words_with_unstable_trans'][word])
             elif word in collected_result['perturbed_or_noise_words']:
                 if include_direct_influence:
                     effect_words.append(original_word)
@@ -521,6 +523,7 @@ def analyse_single_sentence(sentence_df,
                         'effecting_words_idx': effect_words_idx,
                         'direct_perturbation_words': direct_perturbation_words,
                         'direct_perturbation_words_idx': direct_perturbation_words_idx,
+                        'inconsistent_versions': inconsistent_versions,
                         'effecting_words_influence': effect_words_influence  # Percentage of the sentence that are changed when this word is perturbed
                         }
 

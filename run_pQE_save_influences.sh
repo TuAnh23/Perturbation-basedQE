@@ -4,7 +4,7 @@ source /home/tdinh/.bashrc
 conda activate KIT_start
 which python
 
-export CUDA_VISIBLE_DEVICES=5
+export CUDA_VISIBLE_DEVICES=4
 export CUDA_DEVICE_ORDER=PCI_BUS_ID  # make sure the GPU order is correct
 export TORCH_HOME=/project/OML/tdinh/.cache/torch
 export HF_HOME=/project/OML/tdinh/.cache/huggingface
@@ -150,9 +150,8 @@ fi
 declare -a QE_methods=( 'nr_effecting_src_words' 'openkiwi_wmt21' )
 for QE_method in ${QE_methods[@]}; do
   echo "-------------------------------------------------"
-  if [[ ( ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ) ||
-      (! -f ${analyse_output_path}/src_tgt_influence.pkl) ]]; then
-    if [[ (${QE_method} == "openkiwi_2.1.0") || (${QE_method} == "openkiwi_wmt21") ]]; then
+  if [[ (${QE_method} == "openkiwi_2.1.0") || (${QE_method} == "openkiwi_wmt21") ]]; then
+    if [[ ( ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ) ]]; then
       python -u tokenize_original.py \
         --original_translation_output_dir ${output_dir_original_SRC} \
         --dataset ${dataname} \
@@ -170,7 +169,10 @@ for QE_method in ${QE_methods[@]}; do
         --model_path ${model_path} \
         --label_output_path ${analyse_output_path}/pred_labels_${QE_method}.pkl
       conda activate KIT_start
-    else
+    fi
+  else
+    if [[ ( ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ) ||
+      (! -f ${analyse_output_path}/src_tgt_influence.pkl) ]]; then
       python -u quality_estimation.py \
         --perturbed_trans_df_path ${analyse_output_path}/analyse_${dataname}_${SRC_LANG}2${TGT_LANG}_${mask_type}.pkl \
         --original_translation_output_dir ${output_dir_original_SRC} \
