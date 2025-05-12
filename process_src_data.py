@@ -12,6 +12,7 @@ from html import unescape
 import os
 import tarfile
 from utils import set_seed, str_to_bool
+import csv
 
 
 def remove_quotes(sentence):
@@ -190,7 +191,10 @@ def main():
         assert args.src_lang == 'en'
         en_sentences = pd.read_csv(
             f"{args.data_root_dir}/wmt-qe-2020-data/{args.src_lang}-{args.tgt_lang}/dev.{args.src_lang}{args.tgt_lang}.df.short.tsv",
-            sep='\t'
+            sep='\t',
+            engine='python',
+            quoting=csv.QUOTE_NONE,
+            on_bad_lines='warn'  # or 'skip' to silently drop
         )['original'].tolist()
 
         with open(f"{args.data_root_dir}/HJQE/{args.src_lang}-{args.tgt_lang}/dev/dev.tok.src") as f:
