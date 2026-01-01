@@ -17,7 +17,7 @@ dataname="WMT20_HJQE_test"  # "WMT20_HJQE_test" "WMT21_DA_test"
 SRC_LANG=${lang_pair:0:2}
 TGT_LANG=${lang_pair:3:2}
 
-QE_method="openkiwi_2.1.0"  # "openkiwi_wmt21", "openkiwi_2.1.0"
+QE_method="openkiwi_wmt21"  # "openkiwi_wmt21", "openkiwi_2.1.0"
 analyse_output_path="analyse_output/${dataname}_${SRC_LANG}2${TGT_LANG}_${QE_method}"
 data_root_dir="data"
 OUTPUT_dir=output/${dataname}_${lang_pair}
@@ -32,7 +32,7 @@ fi
 
 mkdir -p ${analyse_output_path}
 
-if [[ ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ]]; then
+if [[ ! -f ${analyse_output_path}/qe_scores_${QE_method}.pkl ]]; then
   python -u tokenize_original.py \
     --original_translation_output_dir ${output_dir_original_SRC} \
     --dataset ${dataname} \
@@ -43,7 +43,8 @@ if [[ ! -f ${analyse_output_path}/pred_labels_${QE_method}.pkl ]]; then
   python -u openkiwi_qe.py \
     --original_translation_output_dir ${output_dir_original_SRC} \
     --model_path ${model_path} \
-    --label_output_path ${analyse_output_path}/pred_labels_${QE_method}.pkl
+    --label_output_path ${analyse_output_path}/pred_labels_${QE_method}.pkl \
+    --score_output_path ${analyse_output_path}/qe_scores_${QE_method}.pkl
   conda activate KIT_start
 fi
 
@@ -53,4 +54,5 @@ python -u eval_on_WMT21.py \
   --src_lang ${SRC_LANG} \
   --tgt_lang ${TGT_LANG} \
   --qe_pred_labels_path ${analyse_output_path}/pred_labels_${QE_method}.pkl \
+  --qe_pred_scores_path ${analyse_output_path}/qe_scores_${QE_method}.pkl \
   --output_path ${analyse_output_path}/scores.txt

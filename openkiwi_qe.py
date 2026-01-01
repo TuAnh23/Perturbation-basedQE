@@ -25,9 +25,9 @@ def openkiwi_eval(model_path, tokenized_srcs, tokenized_trans, task):
         target=tokenized_trans,
     )
     if task == 'trans_word_level_eval':
-        return predicted_labels.target_tags_labels
+        return predicted_labels.target_tags_labels, predicted_labels.target_tags_BAD_probabilities
     elif task == 'trans_word_level_eval':
-        return predicted_labels.source_tags_labels
+        return predicted_labels.source_tags_labels, predicted_labels.source_tags_BAD_probabilities
     else:
         raise RuntimeError(f"Unknown task {task}")
 
@@ -39,16 +39,20 @@ def main():
     parser.add_argument('--model_path', type=str)
     parser.add_argument('--task', type=str, default='trans_word_level_eval')
     parser.add_argument('--label_output_path', type=str)
+    parser.add_argument('--score_output_path', type=str)
 
     args = parser.parse_args()
     print(args)
 
     original_translation_df = pd.read_csv(f"{args.original_translation_output_dir}/translations.csv")
-    pred_labels = openkiwi_eval(args.model_path, original_translation_df['tokenized_SRC'].tolist(),
+    pred_labels, pred_scores = openkiwi_eval(args.model_path, original_translation_df['tokenized_SRC'].tolist(),
                                 original_translation_df['tokenized_SRC-Trans'].tolist(), args.task)
 
     with open(args.label_output_path, 'wb') as f:
         pickle.dump(pred_labels, f)
+
+    with open(args.score_output_path, 'wb') as f:
+        pickle.dump(pred_scores, f)
 
 
 if __name__ == "__main__":
